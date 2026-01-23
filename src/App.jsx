@@ -87,6 +87,13 @@ export default function PTRSSystem() {
   const [configTab, setConfigTab] = useState('usuarios');
   const [clienteParaMerge, setClienteParaMerge] = useState(null);
   const [plantillaEditando, setPlantillaEditando] = useState(null);
+  const [expedienteTab, setExpedienteTab] = useState('info');
+  const [notas, setNotas] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
+  const [facturas, setFacturas] = useState([]);
+  const [apelaciones, setApelaciones] = useState([]);
+  const [paginaActual, setPaginaActual] = useState(0);
+  const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
   useEffect(() => {
@@ -166,18 +173,28 @@ export default function PTRSSystem() {
     }
   }, [token]);
 
-  const loadClientes = useCallback(async (search) => {
+  const [totalClientes, setTotalClientes] = useState(0);
+  
+  const loadClientes = useCallback(async (search, pagina = 0) => {
     setLoading(true);
     try {
-      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=500';
+      var offset = pagina * ITEMS_POR_PAGINA;
+      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
       
       if (search && search.trim()) {
         var searchTerm = encodeURIComponent(search.trim());
-        // Search by name, phone, customer_number, work_order_number
-        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.*' + searchTerm + '*,apellido.ilike.*' + searchTerm + '*,telefono_principal.ilike.*' + searchTerm + '*,customer_number.ilike.*' + searchTerm + '*,work_order_number.ilike.*' + searchTerm + '*)&order=nombre.asc&limit=200';
+        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.*' + searchTerm + '*,apellido.ilike.*' + searchTerm + '*,telefono_principal.ilike.*' + searchTerm + '*,customer_number.ilike.*' + searchTerm + '*,work_order_number.ilike.*' + searchTerm + '*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
       }
       
       var res = await api(url, { token: token });
+      
+      // Get total count from header
+      var range = res.headers.get('content-range');
+      if (range) {
+        var total = parseInt(range.split('/')[1]);
+        setTotalClientes(total || 0);
+      }
+      
       var data = await res.json();
       setClientes(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -225,19 +242,47 @@ export default function PTRSSystem() {
   useEffect(() => {
     if (token) {
       loadStats();
-      loadClientes();
+      loadClientes('', 0);
       loadTownships();
     }
   }, [token, loadStats, loadClientes, loadTownships]);
 
-  // Search with debounce
+  // Search with debounce - reset to page 0 when searching
   useEffect(() => {
     if (!token) return;
     const t = setTimeout(() => {
-      loadClientes(busqueda);
+      setPaginaActual(0);
+      loadClientes(busqueda, 0);
     }, 500);
     return () => clearTimeout(t);
   }, [busqueda, token, loadClientes]);
+
+  // Load client details when selected
+  useEffect(() => {
+    if (clienteSeleccionado?.id && token) {
+      const loadClienteDetalle = async () => {
+        try {
+          const [notasRes, docsRes, facturasRes, apelRes] = await Promise.all([
+            api(`notas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`documentos?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
+          ]);
+          setNotas(await notasRes.json() || []);
+          setDocumentos(await docsRes.json() || []);
+          setFacturas(await facturasRes.json() || []);
+          setApelaciones(await apelRes.json() || []);
+        } catch (e) {
+          console.error('Error loading client details:', e);
+          setNotas([]);
+          setDocumentos([]);
+          setFacturas([]);
+          setApelaciones([]);
+        }
+      };
+      loadClienteDetalle();
+    }
+  }, [clienteSeleccionado, token]);
 
   // CRUD Operations
   const saveCliente = async (data) => {
@@ -256,7 +301,7 @@ export default function PTRSSystem() {
       notify(isEdit ? 'Cliente actualizado' : 'Cliente creado');
       setModalActivo(null);
       setClienteSeleccionado(null);
-      loadClientes(busqueda);
+      loadClientes(busqueda, paginaActual);
       loadStats();
     } catch (e) {
       notify(e.message || 'Error al guardar', 'error');
@@ -414,7 +459,7 @@ export default function PTRSSystem() {
       notify('Clientes fusionados correctamente');
       setModalActivo(null);
       setClienteParaMerge(null);
-      loadClientes(busqueda);
+      loadClientes(busqueda, paginaActual);
       loadStats();
     } catch (e) {
       notify('Error al fusionar clientes', 'error');
@@ -430,7 +475,7 @@ export default function PTRSSystem() {
       notify('Cliente eliminado');
       setClienteSeleccionado(null);
       setVistaActual('buscar');
-      loadClientes(busqueda);
+      loadClientes(busqueda, paginaActual);
       loadStats();
     } catch (e) {
       notify('Error al eliminar', 'error');
@@ -618,6 +663,13 @@ export default function PTRSSystem() {
   );
 
   // Search View
+  const totalPaginas = Math.ceil(totalClientes / ITEMS_POR_PAGINA);
+  
+  const cambiarPagina = (nuevaPagina) => {
+    setPaginaActual(nuevaPagina);
+    loadClientes(busqueda, nuevaPagina);
+  };
+  
   const BuscarCliente = () => (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Buscar Cliente</h1>
@@ -654,10 +706,15 @@ export default function PTRSSystem() {
       <div className="bg-white rounded-xl shadow-sm border">
         <div className="p-4 border-b flex items-center justify-between">
           <p className="text-sm text-gray-500">
-            {loading ? 'Buscando...' : `${clientes.length} clientes encontrados`}
+            {loading ? 'Buscando...' : `Mostrando ${clientes.length} de ${totalClientes.toLocaleString()} clientes`}
           </p>
+          {totalPaginas > 1 && (
+            <p className="text-sm text-gray-500">
+              Página {paginaActual + 1} de {totalPaginas}
+            </p>
+          )}
         </div>
-        <div className="divide-y max-h-[600px] overflow-y-auto">
+        <div className="divide-y max-h-[500px] overflow-y-auto">
           {clientes.map((cliente) => (
             <div key={cliente.id} className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => { setClienteSeleccionado(cliente); setExpedienteTab('info'); setVistaActual('expediente'); }}>
               <div className="flex items-center justify-between">
@@ -690,40 +747,62 @@ export default function PTRSSystem() {
             </div>
           )}
         </div>
+        
+        {/* Pagination Controls */}
+        {totalPaginas > 1 && (
+          <div className="p-4 border-t flex items-center justify-between">
+            <button 
+              onClick={() => cambiarPagina(paginaActual - 1)}
+              disabled={paginaActual === 0 || loading}
+              className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center space-x-1"
+            >
+              <span>← Anterior</span>
+            </button>
+            
+            <div className="flex items-center space-x-2">
+              {paginaActual > 2 && (
+                <>
+                  <button onClick={() => cambiarPagina(0)} className="px-3 py-1 border rounded hover:bg-gray-50">1</button>
+                  {paginaActual > 3 && <span className="text-gray-400">...</span>}
+                </>
+              )}
+              
+              {[...Array(5)].map((_, i) => {
+                const pageNum = paginaActual - 2 + i;
+                if (pageNum < 0 || pageNum >= totalPaginas) return null;
+                return (
+                  <button 
+                    key={pageNum}
+                    onClick={() => cambiarPagina(pageNum)}
+                    className={`px-3 py-1 border rounded ${pageNum === paginaActual ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-50'}`}
+                  >
+                    {pageNum + 1}
+                  </button>
+                );
+              })}
+              
+              {paginaActual < totalPaginas - 3 && (
+                <>
+                  {paginaActual < totalPaginas - 4 && <span className="text-gray-400">...</span>}
+                  <button onClick={() => cambiarPagina(totalPaginas - 1)} className="px-3 py-1 border rounded hover:bg-gray-50">{totalPaginas}</button>
+                </>
+              )}
+            </div>
+            
+            <button 
+              onClick={() => cambiarPagina(paginaActual + 1)}
+              disabled={paginaActual >= totalPaginas - 1 || loading}
+              className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center space-x-1"
+            >
+              <span>Siguiente →</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 
   // Client Detail View
-  const [expedienteTab, setExpedienteTab] = useState('info');
-  const [notas, setNotas] = useState([]);
-  const [documentos, setDocumentos] = useState([]);
-  const [facturas, setFacturas] = useState([]);
-  const [apelaciones, setApelaciones] = useState([]);
-  
-  // Load client details when selected
-  useEffect(() => {
-    if (clienteSeleccionado?.id) {
-      const loadClienteDetalle = async () => {
-        try {
-          const [notasRes, docsRes, facturasRes, apelRes] = await Promise.all([
-            api(`notas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
-            api(`documentos?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
-            api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
-            api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
-          ]);
-          setNotas(await notasRes.json() || []);
-          setDocumentos(await docsRes.json() || []);
-          setFacturas(await facturasRes.json() || []);
-          setApelaciones(await apelRes.json() || []);
-        } catch (e) {
-          console.error('Error loading client details:', e);
-        }
-      };
-      loadClienteDetalle();
-    }
-  }, [clienteSeleccionado, token]);
-
   const ExpedienteCliente = () => {
     const cliente = clienteSeleccionado;
     if (!cliente) return <div className="p-8 text-center">Selecciona un cliente</div>;
