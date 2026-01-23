@@ -411,6 +411,28 @@ export default function PTRSSystem() {
     setSaving(false);
   };
 
+  // Update property township
+  const updatePropiedadTownship = async (propiedadId, townshipId) => {
+    try {
+      await api(`propiedades?id=eq.${propiedadId}`, {
+        method: 'PATCH',
+        body: { township_id: townshipId || null },
+        token
+      });
+      // Reload client to refresh properties
+      if (clienteSeleccionado) {
+        const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+        const data = await res.json();
+        if (data && data[0]) {
+          setClienteSeleccionado(data[0]);
+        }
+      }
+      notify('Township actualizado');
+    } catch (e) {
+      notify('Error al actualizar township', 'error');
+    }
+  };
+
   const mergeClientes = async (clienteOrigen, clienteDestino) => {
     setSaving(true);
     try {
@@ -483,10 +505,20 @@ export default function PTRSSystem() {
   };
 
   // Count clients per township
-  const getClientesPorTownship = (townshipCodigo) => {
+  const getClientesPorTownship = (townshipId) => {
     return clientes.filter(c => 
-      c.propiedades && c.propiedades.some(p => p.pin && p.pin.startsWith(townshipCodigo))
+      c.propiedades && c.propiedades.some(p => p.township_id === townshipId)
     ).length;
+  };
+  
+  const getPropiedadesPorTownship = (townshipId) => {
+    let count = 0;
+    clientes.forEach(c => {
+      if (c.propiedades) {
+        count += c.propiedades.filter(p => p.township_id === townshipId).length;
+      }
+    });
+    return count;
   };
 
   // Get townships with alerts (open or urgent)
@@ -896,12 +928,33 @@ export default function PTRSSystem() {
                   <button onClick={() => setModalActivo('nuevaPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
                 </div>
                 {cliente.propiedades?.length > 0 ? cliente.propiedades.map((p, idx) => {
-                  const twp = townships.find(t => t.codigo === p.pin?.substring(0, 2));
+                  const twp = townships.find(t => t.id === p.township_id);
                   return (
                     <div key={idx} className="p-4 bg-gray-50 rounded-lg mb-3">
-                      <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
-                      <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
-                      {twp && <p className="text-sm text-gray-500">Township: {twp.nombre} <span className={`ml-2 px-2 py-0.5 rounded text-xs ${twp.estado_calculado === 'abierto' ? 'bg-green-100 text-green-700' : twp.estado_calculado === 'urgente' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{twp.estado_calculado || 'cerrado'}</span></p>}
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
+                          <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center space-x-2">
+                        <label className="text-sm text-gray-500">Township:</label>
+                        <select 
+                          className="border rounded px-2 py-1 text-sm"
+                          value={p.township_id || ''}
+                          onChange={(e) => updatePropiedadTownship(p.id, e.target.value || null)}
+                        >
+                          <option value="">-- Seleccionar --</option>
+                          {townships.map(t => (
+                            <option key={t.id} value={t.id}>{t.nombre} ({t.codigo})</option>
+                          ))}
+                        </select>
+                        {twp && (
+                          <span className={`px-2 py-0.5 rounded text-xs ${twp.estado_calculado === 'abierto' ? 'bg-green-100 text-green-700' : twp.estado_calculado === 'urgente' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {twp.estado_calculado || 'cerrado'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 }) : <p className="text-gray-500 text-center py-8">Sin propiedades</p>}
@@ -1001,7 +1054,8 @@ export default function PTRSSystem() {
       <h1 className="text-2xl font-bold text-gray-900">Clientes por Township</h1>
       <div className="grid gap-4">
         {townships.map((t, idx) => {
-          const clientesTwp = getClientesPorTownship(t.codigo);
+          const clientesTwp = getClientesPorTownship(t.id);
+          const propiedadesTwp = getPropiedadesPorTownship(t.id);
           const estado = t.estado_calculado || t.estado || 'cerrado';
           
           return (
@@ -1025,6 +1079,10 @@ export default function PTRSSystem() {
                   </div>
                 </div>
                 <div className="flex items-center space-x-6">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-gray-900">{propiedadesTwp}</p>
+                    <p className="text-xs text-gray-500">Propiedades</p>
+                  </div>
                   <div className="text-center">
                     <p className="text-2xl font-bold text-gray-900">{clientesTwp}</p>
                     <p className="text-xs text-gray-500">Clientes</p>
