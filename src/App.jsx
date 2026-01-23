@@ -169,12 +169,12 @@ export default function PTRSSystem() {
   const loadClientes = useCallback(async (search) => {
     setLoading(true);
     try {
-      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=100';
+      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=500';
       
       if (search && search.trim()) {
-        var searchTerm = search.trim();
-        // Search by name or phone - use simpler query for Safari compatibility
-        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.%' + searchTerm + '%,apellido.ilike.%' + searchTerm + '%,telefono_principal.ilike.%' + searchTerm + '%)&order=nombre.asc&limit=100';
+        var searchTerm = encodeURIComponent(search.trim());
+        // Search by name, phone, customer_number, work_order_number
+        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.*' + searchTerm + '*,apellido.ilike.*' + searchTerm + '*,telefono_principal.ilike.*' + searchTerm + '*,customer_number.ilike.*' + searchTerm + '*,work_order_number.ilike.*' + searchTerm + '*)&order=nombre.asc&limit=200';
       }
       
       var res = await api(url, { token: token });
@@ -290,6 +290,62 @@ export default function PTRSSystem() {
     setSaving(false);
   };
 
+  // Save Nota
+  const saveNota = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('notas', { method: 'POST', body: data, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Nota agregada');
+      setModalActivo(null);
+    } catch (e) {
+      notify('Error al guardar nota', 'error');
+    }
+    setSaving(false);
+  };
+
+  // Save Documento
+  const saveDocumento = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('documentos', { method: 'POST', body: data, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Documento registrado');
+      setModalActivo(null);
+    } catch (e) {
+      notify('Error al guardar documento', 'error');
+    }
+    setSaving(false);
+  };
+
+  // Save Factura
+  const saveFactura = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('facturas', { method: 'POST', body: data, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Factura creada');
+      setModalActivo(null);
+    } catch (e) {
+      notify('Error al guardar factura', 'error');
+    }
+    setSaving(false);
+  };
+
+  // Save Apelacion
+  const saveApelacion = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('apelaciones', { method: 'POST', body: data, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Apelación registrada');
+      setModalActivo(null);
+    } catch (e) {
+      notify('Error al guardar apelación', 'error');
+    }
+    setSaving(false);
+  };
+
   const saveTownship = async (township) => {
     setSaving(true);
     try {
@@ -323,6 +379,34 @@ export default function PTRSSystem() {
           });
         }
       }
+      
+      // Move notas
+      await api(`notas?cliente_id=eq.${clienteOrigen.id}`, {
+        method: 'PATCH',
+        body: { cliente_id: clienteDestino.id },
+        token
+      });
+      
+      // Move documentos
+      await api(`documentos?cliente_id=eq.${clienteOrigen.id}`, {
+        method: 'PATCH',
+        body: { cliente_id: clienteDestino.id },
+        token
+      });
+      
+      // Move facturas
+      await api(`facturas?cliente_id=eq.${clienteOrigen.id}`, {
+        method: 'PATCH',
+        body: { cliente_id: clienteDestino.id },
+        token
+      });
+      
+      // Move apelaciones
+      await api(`apelaciones?cliente_id=eq.${clienteOrigen.id}`, {
+        method: 'PATCH',
+        body: { cliente_id: clienteDestino.id },
+        token
+      });
       
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
@@ -542,10 +626,11 @@ export default function PTRSSystem() {
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"><Icon name="search" /></span>
           <input 
             type="text" 
-            placeholder="Buscar por nombre, teléfono, email..." 
+            placeholder="Buscar por nombre, teléfono, customer #, work order #..." 
             className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
             value={busqueda} 
             onChange={(e) => setBusqueda(e.target.value)} 
+            autoFocus
           />
         </div>
         <div className="flex items-center space-x-4 mt-4">
@@ -574,25 +659,19 @@ export default function PTRSSystem() {
         </div>
         <div className="divide-y max-h-[600px] overflow-y-auto">
           {clientes.map((cliente) => (
-            <div key={cliente.id} className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => { setClienteSeleccionado(cliente); setVistaActual('expediente'); }}>
+            <div key={cliente.id} className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => { setClienteSeleccionado(cliente); setExpedienteTab('info'); setVistaActual('expediente'); }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Icon name="user" />
+                    <span className="text-blue-600 font-medium">{cliente.nombre?.[0]?.toUpperCase() || '?'}</span>
                   </div>
                   <div>
                     <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
-                    <div className="flex items-center space-x-4 mt-1">
-                      {cliente.telefono_principal && (
-                        <span className="text-sm text-gray-500 flex items-center">
-                          <Icon name="phone" />
-                          <span className="ml-1">{cliente.telefono_principal}</span>
-                        </span>
-                      )}
-                      <span className="text-sm text-gray-500 flex items-center">
-                        <Icon name="home" />
-                        <span className="ml-1">{cliente.propiedades?.length || 0} propiedad(es)</span>
-                      </span>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
+                      {cliente.customer_number && <span>#{cliente.customer_number}</span>}
+                      {cliente.work_order_number && <span>Orden: {cliente.work_order_number}</span>}
+                      {cliente.telefono_principal && <span>📞 {cliente.telefono_principal}</span>}
+                      <span>🏠 {cliente.propiedades?.length || 0} prop.</span>
                     </div>
                   </div>
                 </div>
@@ -616,118 +695,221 @@ export default function PTRSSystem() {
   );
 
   // Client Detail View
+  const [expedienteTab, setExpedienteTab] = useState('info');
+  const [notas, setNotas] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
+  const [facturas, setFacturas] = useState([]);
+  const [apelaciones, setApelaciones] = useState([]);
+  
+  // Load client details when selected
+  useEffect(() => {
+    if (clienteSeleccionado?.id) {
+      const loadClienteDetalle = async () => {
+        try {
+          const [notasRes, docsRes, facturasRes, apelRes] = await Promise.all([
+            api(`notas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`documentos?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
+          ]);
+          setNotas(await notasRes.json() || []);
+          setDocumentos(await docsRes.json() || []);
+          setFacturas(await facturasRes.json() || []);
+          setApelaciones(await apelRes.json() || []);
+        } catch (e) {
+          console.error('Error loading client details:', e);
+        }
+      };
+      loadClienteDetalle();
+    }
+  }, [clienteSeleccionado, token]);
+
   const ExpedienteCliente = () => {
     const cliente = clienteSeleccionado;
     if (!cliente) return <div className="p-8 text-center">Selecciona un cliente</div>;
     
+    const tabs = [
+      { id: 'info', label: 'Información' },
+      { id: 'propiedades', label: `Propiedades (${cliente.propiedades?.length || 0})` },
+      { id: 'documentos', label: `Documentos (${documentos.length})` },
+      { id: 'notas', label: `Notas (${notas.length})` },
+      { id: 'facturas', label: `Facturas (${facturas.length})` },
+      { id: 'apelaciones', label: `Apelaciones (${apelaciones.length})` },
+    ];
+    
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center space-x-4">
-            <button onClick={() => { setVistaActual('buscar'); setClienteSeleccionado(null); }} className="text-gray-500 hover:text-gray-700">← Volver</button>
-            <h1 className="text-2xl font-bold text-gray-900">{cliente.nombre} {cliente.apellido}</h1>
-            <span className={`px-3 py-1 text-sm rounded-full ${cliente.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-              {cliente.estado || 'activo'}
-            </span>
-          </div>
-          <div className="flex space-x-2">
-            <button onClick={() => setModalActivo('nuevoCliente')} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center space-x-2">
-              <Icon name="edit" />
-              <span>Editar</span>
-            </button>
-            <button onClick={() => deleteCliente(cliente)} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 flex items-center space-x-2">
-              <Icon name="trash" />
-              <span>Eliminar</span>
-            </button>
+        {/* Header */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div className="flex items-center space-x-4">
+              <button onClick={() => { setVistaActual('buscar'); setClienteSeleccionado(null); }} className="text-gray-400 hover:text-gray-600">←</button>
+              <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center">
+                <span className="text-xl font-bold text-blue-600">{cliente.nombre?.[0] || '?'}</span>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">{cliente.nombre} {cliente.apellido}</h1>
+                <div className="flex items-center space-x-3 mt-1 text-sm text-gray-500">
+                  {cliente.customer_number && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Cliente #{cliente.customer_number}</span>}
+                  {cliente.work_order_number && <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded">Orden #{cliente.work_order_number}</span>}
+                  <span className={`px-2 py-0.5 rounded ${cliente.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{cliente.estado || 'activo'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex space-x-2">
+              <button onClick={() => setModalActivo('mergeClientes')} className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 flex items-center space-x-1">
+                <Icon name="merge" />
+                <span>Fusionar</span>
+              </button>
+              <button onClick={() => setModalActivo('nuevoCliente')} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center space-x-1">
+                <Icon name="edit" />
+                <span>Editar</span>
+              </button>
+              <button onClick={() => deleteCliente(cliente)} className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">
+                <Icon name="trash" />
+              </button>
+            </div>
           </div>
         </div>
         
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Contact Info */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">Información de Contacto</h2>
-              <div className="space-y-3">
-                {cliente.telefono_principal && (
-                  <div className="flex items-center space-x-3">
-                    <Icon name="phone" />
-                    <a href={`tel:${cliente.telefono_principal}`} className="text-blue-600 hover:underline">{cliente.telefono_principal}</a>
-                  </div>
-                )}
-                {cliente.email && (
-                  <div className="flex items-center space-x-3">
-                    <Icon name="mail" />
-                    <a href={`mailto:${cliente.email}`} className="text-blue-600 hover:underline">{cliente.email}</a>
-                  </div>
-                )}
-                {cliente.direccion_correspondencia && (
-                  <div className="flex items-start space-x-3">
-                    <Icon name="mapPin" />
-                    <span className="text-gray-700">{cliente.direccion_correspondencia}</span>
-                  </div>
-                )}
-                {cliente.legacy_id && (
-                  <div className="pt-2 border-t mt-2">
-                    <p className="text-xs text-gray-400">ID Legacy: {cliente.legacy_id}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-900">Notas</h2>
-                <button onClick={() => setModalActivo('editarNotas')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
-              </div>
-              <p className="text-gray-500 text-sm">{cliente.notas || 'Sin notas'}</p>
-            </div>
+        {/* Tabs */}
+        <div className="bg-white rounded-xl shadow-sm border">
+          <div className="flex border-b overflow-x-auto">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setExpedienteTab(tab.id)}
+                className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 ${expedienteTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           
-          {/* Properties */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border">
-              <div className="p-4 border-b flex items-center justify-between">
-                <h2 className="font-semibold text-gray-900">Propiedades ({cliente.propiedades?.length || 0})</h2>
-                <button onClick={() => setModalActivo('nuevaPropiedad')} className="text-blue-600 text-sm hover:underline flex items-center space-x-1">
-                  <Icon name="plus" />
-                  <span>Agregar propiedad</span>
-                </button>
+          <div className="p-6">
+            {/* Info Tab */}
+            {expedienteTab === 'info' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Contacto</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3"><Icon name="phone" /><span>{cliente.telefono_principal || 'Sin teléfono'}</span></div>
+                    <div className="flex items-center space-x-3"><Icon name="mail" /><span>{cliente.email || 'Sin email'}</span></div>
+                    <div className="flex items-start space-x-3"><Icon name="mapPin" /><span>{cliente.direccion_correspondencia || 'Sin dirección'}</span></div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Sistema</h3>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="text-gray-500">Customer #:</span> <span className="font-medium">{cliente.customer_number || 'N/A'}</span></p>
+                    <p><span className="text-gray-500">Work Order #:</span> <span className="font-medium">{cliente.work_order_number || 'N/A'}</span></p>
+                    {cliente.legacy_id && <p><span className="text-gray-500">Legacy ID:</span> <span className="font-medium">{cliente.legacy_id}</span></p>}
+                  </div>
+                </div>
               </div>
-              {cliente.propiedades && cliente.propiedades.length > 0 ? cliente.propiedades.map((p, idx) => {
-                const townshipCodigo = p.pin?.substring(0, 2);
-                const township = townships.find(t => t.codigo === townshipCodigo);
-                
-                return (
-                  <div key={idx} className="p-6 border-b last:border-0">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <span className="font-mono text-lg font-semibold text-blue-600">{p.pin_formatted || p.pin}</span>
-                        <p className="text-gray-600 mt-1">{p.direccion || 'Sin dirección'}</p>
-                        <p className="text-sm text-gray-500">
-                          Township: <span className="font-medium">{township?.nombre || townshipCodigo || 'N/A'}</span>
-                          {township && (
-                            <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                              township.estado === 'abierto' || township.estado_calculado === 'abierto' ? 'bg-green-100 text-green-700' :
-                              township.estado === 'urgente' || township.estado_calculado === 'urgente' ? 'bg-red-100 text-red-700' :
-                              'bg-gray-100 text-gray-600'
-                            }`}>
-                              {township.estado_calculado || township.estado || 'cerrado'}
-                            </span>
-                          )}
-                        </p>
-                      </div>
+            )}
+            
+            {/* Properties Tab */}
+            {expedienteTab === 'propiedades' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Propiedades</h3>
+                  <button onClick={() => setModalActivo('nuevaPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
+                </div>
+                {cliente.propiedades?.length > 0 ? cliente.propiedades.map((p, idx) => {
+                  const twp = townships.find(t => t.codigo === p.pin?.substring(0, 2));
+                  return (
+                    <div key={idx} className="p-4 bg-gray-50 rounded-lg mb-3">
+                      <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
+                      <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
+                      {twp && <p className="text-sm text-gray-500">Township: {twp.nombre} <span className={`ml-2 px-2 py-0.5 rounded text-xs ${twp.estado_calculado === 'abierto' ? 'bg-green-100 text-green-700' : twp.estado_calculado === 'urgente' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{twp.estado_calculado || 'cerrado'}</span></p>}
+                    </div>
+                  );
+                }) : <p className="text-gray-500 text-center py-8">Sin propiedades</p>}
+              </div>
+            )}
+            
+            {/* Documents Tab */}
+            {expedienteTab === 'documentos' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Documentos</h3>
+                  <button onClick={() => setModalActivo('nuevoDocumento')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
+                </div>
+                {documentos.length > 0 ? documentos.map((d, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">{d.nombre}</p>
+                      <p className="text-sm text-gray-500">{d.tipo} - {d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</p>
+                      {d.notas && <p className="text-sm text-gray-600 mt-1">{d.notas}</p>}
+                    </div>
+                    {d.archivo_url && <a href={d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">Sin documentos</p>}
+              </div>
+            )}
+            
+            {/* Notes Tab */}
+            {expedienteTab === 'notas' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Notas e Historial</h3>
+                  <button onClick={() => setModalActivo('nuevaNota')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
+                </div>
+                {notas.length > 0 ? notas.map((n, i) => (
+                  <div key={i} className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-3">
+                    <div className="flex justify-between mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded ${n.tipo === 'llamada' ? 'bg-blue-100 text-blue-700' : n.tipo === 'email' ? 'bg-purple-100 text-purple-700' : 'bg-yellow-100 text-yellow-700'}`}>{n.tipo || 'nota'}</span>
+                      <span className="text-xs text-gray-400">{n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
+                    </div>
+                    <p className="text-gray-700">{n.contenido}</p>
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">Sin notas</p>}
+              </div>
+            )}
+            
+            {/* Invoices Tab */}
+            {expedienteTab === 'facturas' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Facturas</h3>
+                  <button onClick={() => setModalActivo('nuevaFactura')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
+                </div>
+                {facturas.length > 0 ? facturas.map((f, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">#{f.numero || f.id?.substring(0, 8)}</p>
+                      <p className="text-sm text-gray-500">{f.concepto}</p>
+                      <p className="text-xs text-gray-400">{f.fecha_emision}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold">${f.monto || 0}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
                     </div>
                   </div>
-                );
-              }) : (
-                <div className="p-6 text-center text-gray-500">
-                  <p>Sin propiedades registradas</p>
-                  <button onClick={() => setModalActivo('nuevaPropiedad')} className="mt-2 text-blue-600 hover:underline">
-                    Agregar primera propiedad
-                  </button>
+                )) : <p className="text-gray-500 text-center py-8">Sin facturas</p>}
+              </div>
+            )}
+            
+            {/* Appeals Tab */}
+            {expedienteTab === 'apelaciones' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Apelaciones</h3>
+                  <button onClick={() => setModalActivo('nuevaApelacion')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
                 </div>
-              )}
-            </div>
+                {apelaciones.length > 0 ? apelaciones.map((a, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
+                    <div className="flex justify-between mb-2">
+                      <span className="font-medium">Año {a.anio} - {a.tipo}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado}</span>
+                    </div>
+                    {a.ahorro && <p className="text-green-600 font-medium">Ahorro: ${a.ahorro}</p>}
+                    {a.notas && <p className="text-sm text-gray-600 mt-1">{a.notas}</p>}
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">Sin apelaciones</p>}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1027,11 +1209,13 @@ export default function PTRSSystem() {
       email: clienteSeleccionado?.email || '',
       direccion_correspondencia: clienteSeleccionado?.direccion_correspondencia || '',
       estado: clienteSeleccionado?.estado || 'activo',
+      customer_number: clienteSeleccionado?.customer_number || '',
+      work_order_number: clienteSeleccionado?.work_order_number || '',
     });
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">{clienteSeleccionado ? 'Editar' : 'Nuevo'} Cliente</h3>
             <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600">
@@ -1048,6 +1232,16 @@ export default function PTRSSystem() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
                   <input className="w-full border rounded-lg px-3 py-2" value={form.apellido} onChange={(e) => setForm({...form, apellido: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.customer_number} onChange={(e) => setForm({...form, customer_number: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Work Order #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.work_order_number} onChange={(e) => setForm({...form, work_order_number: e.target.value})} />
                 </div>
               </div>
               <div>
@@ -1140,6 +1334,228 @@ export default function PTRSSystem() {
               <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
                 {saving ? 'Guardando...' : 'Guardar'}
               </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Nueva Nota Modal
+  const ModalNuevaNota = () => {
+    const [form, setForm] = useState({
+      cliente_id: clienteSeleccionado?.id || '',
+      contenido: '',
+      tipo: 'nota'
+    });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Nueva Nota</h3>
+            <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveNota(form); }}>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
+                  <option value="nota">Nota</option>
+                  <option value="llamada">Llamada</option>
+                  <option value="email">Email</option>
+                  <option value="visita">Visita</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contenido *</label>
+                <textarea className="w-full border rounded-lg px-3 py-2 h-32" value={form.contenido} onChange={(e) => setForm({...form, contenido: e.target.value})} required />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Nuevo Documento Modal
+  const ModalNuevoDocumento = () => {
+    const [form, setForm] = useState({
+      cliente_id: clienteSeleccionado?.id || '',
+      nombre: '',
+      tipo: 'otro',
+      notas: '',
+      archivo_url: ''
+    });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Nuevo Documento</h3>
+            <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveDocumento(form); }}>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del documento *</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
+                  <option value="identificacion">Identificación</option>
+                  <option value="titulo">Título de propiedad</option>
+                  <option value="factura_impuestos">Factura de impuestos</option>
+                  <option value="autorizacion">Autorización</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL del archivo (opcional)</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.archivo_url} onChange={(e) => setForm({...form, archivo_url: e.target.value})} placeholder="https://..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Nueva Factura Modal
+  const ModalNuevaFactura = () => {
+    const [form, setForm] = useState({
+      cliente_id: clienteSeleccionado?.id || '',
+      numero: '',
+      monto: '',
+      concepto: '',
+      fecha_emision: new Date().toISOString().split('T')[0],
+      estado: 'pendiente'
+    });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Nueva Factura</h3>
+            <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveFactura({...form, monto: parseFloat(form.monto) || 0}); }}>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.numero} onChange={(e) => setForm({...form, numero: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto *</label>
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.monto} onChange={(e) => setForm({...form, monto: e.target.value})} required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_emision} onChange={(e) => setForm({...form, fecha_emision: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagada">Pagada</option>
+                    <option value="cancelada">Cancelada</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Nueva Apelacion Modal
+  const ModalNuevaApelacion = () => {
+    const [form, setForm] = useState({
+      cliente_id: clienteSeleccionado?.id || '',
+      propiedad_id: clienteSeleccionado?.propiedades?.[0]?.id || '',
+      anio: new Date().getFullYear(),
+      tipo: 'assessor',
+      estado: 'pendiente',
+      notas: '',
+      ahorro: ''
+    });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Nueva Apelación</h3>
+            <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveApelacion({...form, ahorro: parseFloat(form.ahorro) || null}); }}>
+            <div className="p-6 space-y-4">
+              {clienteSeleccionado?.propiedades?.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Propiedad</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.propiedad_id} onChange={(e) => setForm({...form, propiedad_id: e.target.value})}>
+                    {clienteSeleccionado.propiedades.map(p => (
+                      <option key={p.id} value={p.id}>{p.pin} - {p.direccion || 'Sin dirección'}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Año *</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2" value={form.anio} onChange={(e) => setForm({...form, anio: parseInt(e.target.value)})} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
+                    <option value="assessor">Assessor</option>
+                    <option value="bor">Board of Review</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="enviada">Enviada</option>
+                    <option value="aprobada">Aprobada</option>
+                    <option value="rechazada">Rechazada</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ahorro $</label>
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.ahorro} onChange={(e) => setForm({...form, ahorro: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         </div>
@@ -1426,6 +1842,10 @@ export default function PTRSSystem() {
       {/* Modals */}
       {modalActivo === 'nuevoCliente' && <ModalNuevoCliente />}
       {modalActivo === 'nuevaPropiedad' && <ModalNuevaPropiedad />}
+      {modalActivo === 'nuevaNota' && <ModalNuevaNota />}
+      {modalActivo === 'nuevoDocumento' && <ModalNuevoDocumento />}
+      {modalActivo === 'nuevaFactura' && <ModalNuevaFactura />}
+      {modalActivo === 'nuevaApelacion' && <ModalNuevaApelacion />}
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
       {modalActivo === 'nuevoUsuario' && <ModalNuevoUsuario />}
       {modalActivo === 'editarPlantilla' && <ModalEditarPlantilla />}
