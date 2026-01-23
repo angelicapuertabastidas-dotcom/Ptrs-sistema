@@ -1,28 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const SUPABASE_URL = 'https://cokcypwamvacelutwzfm.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNva2N5cHdhbXZhY2VsdXR3emZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MTYxNzAsImV4cCI6MjA4NDQ5MjE3MH0.c6yYN4BBZhwfeHzbmFNyZLkWcwmoNL_9Jdvi17EGX-E';
+var SUPABASE_URL = 'https://cokcypwamvacelutwzfm.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNva2N5cHdhbXZhY2VsdXR3emZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MTYxNzAsImV4cCI6MjA4NDQ5MjE3MH0.c6yYN4BBZhwfeHzbmFNyZLkWcwmoNL_9Jdvi17EGX-E';
 
-// API helper
-const api = async (endpoint, options = {}) => {
-  const { method = 'GET', body, token } = options;
-  const headers = {
+// API helper - Safari compatible
+var api = async function(endpoint, options) {
+  options = options || {};
+  var method = options.method || 'GET';
+  var body = options.body;
+  var token = options.token;
+  var headers = {
     'apikey': SUPABASE_KEY,
-    'Authorization': `Bearer ${token || SUPABASE_KEY}`,
+    'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
     'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
   };
-  const config = { method, headers };
+  var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, config);
+  var res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, config);
   return res;
 };
 
-const authSignIn = async (email, password) => {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+var authSignIn = async function(email, password) {
+  var res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
     method: 'POST',
     headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email: email, password: password })
   });
   return res.json();
 };
@@ -85,13 +88,17 @@ export default function PTRSSystem() {
   const [clienteParaMerge, setClienteParaMerge] = useState(null);
   const [plantillaEditando, setPlantillaEditando] = useState(null);
 
-  // Auth effects
+  // Auth effects - Safari compatible
   useEffect(() => {
-    const savedToken = localStorage.getItem('ptrs_token');
-    const savedUser = localStorage.getItem('ptrs_user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+    try {
+      const savedToken = localStorage.getItem('ptrs_token');
+      const savedUser = localStorage.getItem('ptrs_user');
+      if (savedToken && savedUser) {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (e) {
+      console.log('localStorage not available');
     }
     setAuthLoading(false);
   }, []);
@@ -103,8 +110,12 @@ export default function PTRSSystem() {
       if (result.error) {
         notify(result.error_description || 'Credenciales incorrectas', 'error');
       } else if (result.access_token) {
-        localStorage.setItem('ptrs_token', result.access_token);
-        localStorage.setItem('ptrs_user', JSON.stringify(result.user));
+        try {
+          localStorage.setItem('ptrs_token', result.access_token);
+          localStorage.setItem('ptrs_user', JSON.stringify(result.user));
+        } catch (e) {
+          console.log('Could not save to localStorage');
+        }
         setUser(result.user);
         setToken(result.access_token);
         notify('¡Bienvenido!');
@@ -116,8 +127,12 @@ export default function PTRSSystem() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('ptrs_token');
-    localStorage.removeItem('ptrs_user');
+    try {
+      localStorage.removeItem('ptrs_token');
+      localStorage.removeItem('ptrs_user');
+    } catch (e) {
+      console.log('Could not clear localStorage');
+    }
     setUser(null);
     setToken(null);
   };
@@ -151,19 +166,19 @@ export default function PTRSSystem() {
     }
   }, [token]);
 
-  const loadClientes = useCallback(async (search = '') => {
+  const loadClientes = useCallback(async (search) => {
     setLoading(true);
     try {
-      let url = 'clientes?select=*,propiedades(*)&order=created_at.desc&limit=100';
+      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=100';
       
       if (search && search.trim()) {
-        const searchTerm = search.trim();
-        // Search by name, phone, or property PIN
-        url = `clientes?select=*,propiedades(*)&or=(nombre.ilike.%${searchTerm}%,apellido.ilike.%${searchTerm}%,telefono_principal.ilike.%${searchTerm}%,nombre_completo.ilike.%${searchTerm}%)&order=nombre.asc&limit=100`;
+        var searchTerm = search.trim();
+        // Search by name or phone - use simpler query for Safari compatibility
+        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.%' + searchTerm + '%,apellido.ilike.%' + searchTerm + '%,telefono_principal.ilike.%' + searchTerm + '%)&order=nombre.asc&limit=100';
       }
       
-      const res = await api(url, { token });
-      const data = await res.json();
+      var res = await api(url, { token: token });
+      var data = await res.json();
       setClientes(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Error loading clientes:', e);
