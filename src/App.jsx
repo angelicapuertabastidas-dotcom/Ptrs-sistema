@@ -1008,15 +1008,21 @@ export default function PTRSSystem() {
                   <button onClick={() => setModalActivo('nuevaFactura')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
                 </div>
                 {facturas.length > 0 ? facturas.map((f, i) => (
-                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 flex justify-between items-center">
-                    <div>
-                      <p className="font-medium">#{f.numero || f.id?.substring(0, 8)}</p>
-                      <p className="text-sm text-gray-500">{f.concepto}</p>
-                      <p className="text-xs text-gray-400">{f.fecha_emision}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold">${f.monto || 0}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">Factura #{f.numero || f.id?.substring(0, 8)}</p>
+                        <div className="flex space-x-3 text-xs text-gray-500 mt-1">
+                          {f.customer_number && <span>Customer: {f.customer_number}</span>}
+                          {f.work_order_number && <span>Work Order: {f.work_order_number}</span>}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{f.concepto}</p>
+                        <p className="text-xs text-gray-400 mt-1">{f.fecha_emision}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold">${f.monto || 0}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
+                      </div>
                     </div>
                   </div>
                 )) : <p className="text-gray-500 text-center py-8">Sin facturas</p>}
@@ -1573,6 +1579,8 @@ export default function PTRSSystem() {
   const ModalNuevaFactura = () => {
     const [form, setForm] = useState({
       cliente_id: clienteSeleccionado?.id || '',
+      customer_number: clienteSeleccionado?.customer_number || '',
+      work_order_number: clienteSeleccionado?.work_order_number || '',
       numero: '',
       monto: '',
       concepto: '',
@@ -1581,7 +1589,7 @@ export default function PTRSSystem() {
     });
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">Nueva Factura</h3>
             <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
@@ -1590,7 +1598,17 @@ export default function PTRSSystem() {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.customer_number} onChange={(e) => setForm({...form, customer_number: e.target.value})} placeholder="Ej: 001234" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Work Order #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.work_order_number} onChange={(e) => setForm({...form, work_order_number: e.target.value})} placeholder="Ej: 002345" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Número Factura</label>
                   <input className="w-full border rounded-lg px-3 py-2" value={form.numero} onChange={(e) => setForm({...form, numero: e.target.value})} />
                 </div>
                 <div>
