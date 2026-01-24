@@ -523,7 +523,6 @@ export default function PTRSSystem() {
       if (clienteOrigen.telefono_principal) notaContenido += `Teléfono: ${clienteOrigen.telefono_principal}\n`;
       if (clienteOrigen.email) notaContenido += `Email: ${clienteOrigen.email}\n`;
       if (clienteOrigen.direccion_correspondencia) notaContenido += `Dirección: ${clienteOrigen.direccion_correspondencia}\n`;
-      if (clienteOrigen.legacy_id) notaContenido += `Legacy ID: ${clienteOrigen.legacy_id}\n`;
       notaContenido += `Propiedades transferidas: ${clienteOrigen.propiedades?.length || 0}`;
       
       await api('notas', {
@@ -993,7 +992,6 @@ export default function PTRSSystem() {
                   <div className="space-y-2 text-sm">
                     <p><span className="text-gray-500">Customer #:</span> <span className="font-medium">{cliente.customer_number || 'N/A'}</span></p>
                     <p><span className="text-gray-500">Work Order #:</span> <span className="font-medium">{cliente.work_order_number || 'N/A'}</span></p>
-                    {cliente.legacy_id && <p><span className="text-gray-500">Legacy ID:</span> <span className="font-medium">{cliente.legacy_id}</span></p>}
                   </div>
                 </div>
               </div>
