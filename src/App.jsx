@@ -96,6 +96,12 @@ export default function PTRSSystem() {
   const [facturas, setFacturas] = useState([]);
   const [apelaciones, setApelaciones] = useState([]);
   const [paginaActual, setPaginaActual] = useState(0);
+  const [propiedadSeleccionada, setPropiedadSeleccionada] = useState(null);
+  const [propiedadTab, setPropiedadTab] = useState('facturas');
+  const [propiedadFacturas, setPropiedadFacturas] = useState([]);
+  const [propiedadDocumentos, setPropiedadDocumentos] = useState([]);
+  const [propiedadNotas, setPropiedadNotas] = useState([]);
+  const [propiedadApelaciones, setPropiedadApelaciones] = useState([]);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -306,6 +312,33 @@ export default function PTRSSystem() {
       loadClienteDetalle();
     }
   }, [clienteSeleccionado, token]);
+
+  // Load property expediente data
+  useEffect(() => {
+    if (propiedadSeleccionada?.id && token) {
+      const loadPropiedadDetalle = async () => {
+        try {
+          const [facturasRes, docsRes, notasRes, apelRes] = await Promise.all([
+            api(`facturas?propiedad_id=eq.${propiedadSeleccionada.id}&order=fecha_factura.desc`, { token }),
+            api(`documentos?propiedad_id=eq.${propiedadSeleccionada.id}&order=created_at.desc`, { token }),
+            api(`notas?propiedad_id=eq.${propiedadSeleccionada.id}&order=created_at.desc`, { token }),
+            api(`apelaciones?propiedad_id=eq.${propiedadSeleccionada.id}&order=anio.desc`, { token })
+          ]);
+          setPropiedadFacturas(await facturasRes.json() || []);
+          setPropiedadDocumentos(await docsRes.json() || []);
+          setPropiedadNotas(await notasRes.json() || []);
+          setPropiedadApelaciones(await apelRes.json() || []);
+        } catch (e) {
+          console.error('Error loading property details:', e);
+          setPropiedadFacturas([]);
+          setPropiedadDocumentos([]);
+          setPropiedadNotas([]);
+          setPropiedadApelaciones([]);
+        }
+      };
+      loadPropiedadDetalle();
+    }
+  }, [propiedadSeleccionada, token]);
 
   // CRUD Operations
   const saveCliente = async (data) => {
@@ -1053,18 +1086,29 @@ export default function PTRSSystem() {
                 {cliente.propiedades?.length > 0 ? cliente.propiedades.map((p, idx) => {
                   const twp = townships.find(t => t.id === p.township_id);
                   return (
-                    <div key={idx} className="p-4 bg-gray-50 rounded-lg mb-3">
+                    <div key={idx} className="p-4 bg-gray-50 rounded-lg mb-3 border-l-4 border-blue-400">
                       <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
+                        <div 
+                          className="cursor-pointer hover:opacity-80"
+                          onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('facturas'); setModalActivo('expedientePropiedad'); }}
+                        >
+                          <p className="font-mono text-lg font-semibold text-blue-600 hover:underline">{p.pin}</p>
                           <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
                         </div>
-                        <button 
-                          onClick={() => { setPropiedadParaTransferir(p); setModalActivo('transferirPropiedad'); }}
-                          className="text-xs text-orange-600 hover:text-orange-800 border border-orange-300 px-2 py-1 rounded"
-                        >
-                          Transferir
-                        </button>
+                        <div className="flex space-x-2">
+                          <button 
+                            onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('facturas'); setModalActivo('expedientePropiedad'); }}
+                            className="text-xs text-blue-600 hover:text-blue-800 border border-blue-300 px-2 py-1 rounded"
+                          >
+                            📁 Expediente
+                          </button>
+                          <button 
+                            onClick={() => { setPropiedadParaTransferir(p); setModalActivo('transferirPropiedad'); }}
+                            className="text-xs text-orange-600 hover:text-orange-800 border border-orange-300 px-2 py-1 rounded"
+                          >
+                            Transferir
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="flex items-center space-x-2">
@@ -1878,6 +1922,148 @@ export default function PTRSSystem() {
     );
   };
 
+  // Modal Expediente Propiedad (PIN)
+  const ModalExpedientePropiedad = () => {
+    if (!propiedadSeleccionada) return null;
+    const twp = townships.find(t => t.id === propiedadSeleccionada.township_id);
+    const propTabs = [
+      { id: 'facturas', label: `Facturas (${propiedadFacturas.length})` },
+      { id: 'apelaciones', label: `Apelaciones (${propiedadApelaciones.length})` },
+      { id: 'documentos', label: `Documentos (${propiedadDocumentos.length})` },
+      { id: 'notas', label: `Notas (${propiedadNotas.length})` },
+    ];
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Expediente de Propiedad</p>
+                <h2 className="font-mono text-2xl font-bold text-blue-600">{propiedadSeleccionada.pin}</h2>
+                <p className="text-gray-600 mt-1">{propiedadSeleccionada.direccion || 'Sin dirección'}</p>
+                <div className="flex items-center space-x-3 mt-2 text-sm">
+                  {twp && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{twp.nombre}</span>}
+                  {propiedadSeleccionada.customer_number && <span className="text-gray-500">Customer: {propiedadSeleccionada.customer_number}</span>}
+                  {propiedadSeleccionada.work_order_number && <span className="text-gray-500">WO: {propiedadSeleccionada.work_order_number}</span>}
+                </div>
+              </div>
+              <button onClick={() => { setModalActivo(null); setPropiedadSeleccionada(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+          </div>
+          
+          {/* Tabs */}
+          <div className="flex border-b">
+            {propTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setPropiedadTab(tab.id)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 ${propiedadTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {/* Facturas Tab */}
+            {propiedadTab === 'facturas' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Historial de Facturas</h3>
+                  <button onClick={() => setModalActivo('nuevaFacturaPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Factura</button>
+                </div>
+                {propiedadFacturas.length > 0 ? propiedadFacturas.map((f, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 border-l-4 border-green-400">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
+                            {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
+                          </span>
+                          <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
+                        </div>
+                        <div className="flex space-x-3 text-xs text-gray-500 mt-2">
+                          {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
+                        </div>
+                        {f.concepto && <p className="text-sm text-gray-600 mt-2">{f.concepto}</p>}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
+                      </div>
+                    </div>
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">No hay facturas registradas para esta propiedad</p>}
+              </div>
+            )}
+            
+            {/* Apelaciones Tab */}
+            {propiedadTab === 'apelaciones' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Historial de Apelaciones</h3>
+                  <button onClick={() => setModalActivo('nuevaApelacionPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Apelación</button>
+                </div>
+                {propiedadApelaciones.length > 0 ? propiedadApelaciones.map((a, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
+                    <div className="flex justify-between mb-2">
+                      <span className="font-semibold text-lg">{a.anio}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado}</span>
+                    </div>
+                    {a.ahorro && <p className="text-green-600 font-medium">Ahorro: ${Number(a.ahorro).toLocaleString()}</p>}
+                    {a.notas && <p className="text-sm text-gray-600 mt-2">{a.notas}</p>}
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">No hay apelaciones registradas para esta propiedad</p>}
+              </div>
+            )}
+            
+            {/* Documentos Tab */}
+            {propiedadTab === 'documentos' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Documentos</h3>
+                  <button onClick={() => setModalActivo('nuevoDocumentoPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Documento</button>
+                </div>
+                {propiedadDocumentos.length > 0 ? propiedadDocumentos.map((d, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 flex justify-between items-center">
+                    <div>
+                      <p className="font-medium">{d.nombre}</p>
+                      <p className="text-sm text-gray-500">{d.tipo} - {d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</p>
+                      {d.notas && <p className="text-sm text-gray-600 mt-1">{d.notas}</p>}
+                    </div>
+                    {d.archivo_url && <a href={d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">No hay documentos para esta propiedad</p>}
+              </div>
+            )}
+            
+            {/* Notas Tab */}
+            {propiedadTab === 'notas' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Notas e Historial</h3>
+                  <button onClick={() => setModalActivo('nuevaNotaPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Nota</button>
+                </div>
+                {propiedadNotas.length > 0 ? propiedadNotas.map((n, i) => (
+                  <div key={i} className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-3">
+                    <div className="flex justify-between mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded ${n.tipo === 'llamada' ? 'bg-blue-100 text-blue-700' : n.tipo === 'email' ? 'bg-purple-100 text-purple-700' : 'bg-yellow-100 text-yellow-700'}`}>{n.tipo || 'nota'}</span>
+                      <span className="text-xs text-gray-400">{n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
+                    </div>
+                    <p className="text-gray-700">{n.contenido}</p>
+                  </div>
+                )) : <p className="text-gray-500 text-center py-8">No hay notas para esta propiedad</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Modal Transferir Propiedad
   const ModalTransferirPropiedad = () => {
     if (!propiedadParaTransferir) return null;
@@ -2212,6 +2398,7 @@ export default function PTRSSystem() {
       {modalActivo === 'nuevaApelacion' && <ModalNuevaApelacion />}
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
       {modalActivo === 'transferirPropiedad' && <ModalTransferirPropiedad />}
+      {modalActivo === 'expedientePropiedad' && <ModalExpedientePropiedad />}
       {modalActivo === 'nuevoUsuario' && <ModalNuevoUsuario />}
       {modalActivo === 'editarPlantilla' && <ModalEditarPlantilla />}
       
