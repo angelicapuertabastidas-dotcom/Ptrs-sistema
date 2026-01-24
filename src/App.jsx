@@ -495,6 +495,27 @@ export default function PTRSSystem() {
         token
       });
       
+      // Create automatic note with merged client's data
+      var notaContenido = `📋 CLIENTE FUSIONADO:\n`;
+      notaContenido += `Nombre: ${clienteOrigen.nombre || ''} ${clienteOrigen.apellido || ''}\n`;
+      if (clienteOrigen.customer_number) notaContenido += `Customer #: ${clienteOrigen.customer_number}\n`;
+      if (clienteOrigen.work_order_number) notaContenido += `Work Order #: ${clienteOrigen.work_order_number}\n`;
+      if (clienteOrigen.telefono_principal) notaContenido += `Teléfono: ${clienteOrigen.telefono_principal}\n`;
+      if (clienteOrigen.email) notaContenido += `Email: ${clienteOrigen.email}\n`;
+      if (clienteOrigen.direccion_correspondencia) notaContenido += `Dirección: ${clienteOrigen.direccion_correspondencia}\n`;
+      if (clienteOrigen.legacy_id) notaContenido += `Legacy ID: ${clienteOrigen.legacy_id}\n`;
+      notaContenido += `Propiedades transferidas: ${clienteOrigen.propiedades?.length || 0}`;
+      
+      await api('notas', {
+        method: 'POST',
+        body: {
+          cliente_id: clienteDestino.id,
+          contenido: notaContenido,
+          tipo: 'nota'
+        },
+        token
+      });
+      
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
