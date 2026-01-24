@@ -30,6 +30,29 @@ var authSignIn = async function(email, password) {
   return res.json();
 };
 
+// Upload file to Supabase Storage
+var uploadFile = async function(file, folder, token) {
+  var timestamp = Date.now();
+  var safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  var path = folder + '/' + timestamp + '_' + safeName;
+  
+  var res = await fetch(SUPABASE_URL + '/storage/v1/object/documentos/' + path, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+      'Content-Type': file.type,
+      'x-upsert': 'true'
+    },
+    body: file
+  });
+  
+  if (res.ok) {
+    return SUPABASE_URL + '/storage/v1/object/public/documentos/' + path;
+  }
+  throw new Error('Error uploading file');
+};
+
 // Icons
 function Icon({ name, size = 5 }) {
   const s = `w-${size} h-${size}`;
@@ -441,6 +464,68 @@ export default function PTRSSystem() {
       if (!res.ok) throw new Error('Error al guardar');
       notify('Apelación registrada');
       setModalActivo(null);
+    } catch (e) {
+      notify('Error al guardar apelación', 'error');
+    }
+    setSaving(false);
+  };
+
+  // Save functions for property expediente
+  const saveFacturaPropiedad = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('facturas', { method: 'POST', body: { ...data, propiedad_id: propiedadSeleccionada?.id, cliente_id: clienteSeleccionado?.id }, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Factura agregada');
+      setModalActivo('expedientePropiedad');
+      // Reload property data
+      const facturasRes = await api(`facturas?propiedad_id=eq.${propiedadSeleccionada.id}&order=fecha_factura.desc`, { token });
+      setPropiedadFacturas(await facturasRes.json() || []);
+    } catch (e) {
+      notify('Error al guardar factura', 'error');
+    }
+    setSaving(false);
+  };
+
+  const saveNotaPropiedad = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('notas', { method: 'POST', body: { ...data, propiedad_id: propiedadSeleccionada?.id, cliente_id: clienteSeleccionado?.id }, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Nota agregada');
+      setModalActivo('expedientePropiedad');
+      const notasRes = await api(`notas?propiedad_id=eq.${propiedadSeleccionada.id}&order=created_at.desc`, { token });
+      setPropiedadNotas(await notasRes.json() || []);
+    } catch (e) {
+      notify('Error al guardar nota', 'error');
+    }
+    setSaving(false);
+  };
+
+  const saveDocumentoPropiedad = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('documentos', { method: 'POST', body: { ...data, propiedad_id: propiedadSeleccionada?.id, cliente_id: clienteSeleccionado?.id }, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Documento agregado');
+      setModalActivo('expedientePropiedad');
+      const docsRes = await api(`documentos?propiedad_id=eq.${propiedadSeleccionada.id}&order=created_at.desc`, { token });
+      setPropiedadDocumentos(await docsRes.json() || []);
+    } catch (e) {
+      notify('Error al guardar documento', 'error');
+    }
+    setSaving(false);
+  };
+
+  const saveApelacionPropiedad = async (data) => {
+    setSaving(true);
+    try {
+      const res = await api('apelaciones', { method: 'POST', body: { ...data, propiedad_id: propiedadSeleccionada?.id, cliente_id: clienteSeleccionado?.id }, token });
+      if (!res.ok) throw new Error('Error al guardar');
+      notify('Apelación agregada');
+      setModalActivo('expedientePropiedad');
+      const apelRes = await api(`apelaciones?propiedad_id=eq.${propiedadSeleccionada.id}&order=anio.desc`, { token });
+      setPropiedadApelaciones(await apelRes.json() || []);
     } catch (e) {
       notify('Error al guardar apelación', 'error');
     }
@@ -1110,28 +1195,6 @@ export default function PTRSSystem() {
                           </button>
                         </div>
                       </div>
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="flex items-center space-x-2">
-                          <label className="text-sm text-gray-500 w-24">Customer #:</label>
-                          <input 
-                            type="text"
-                            className="border rounded px-2 py-1 text-sm flex-1"
-                            defaultValue={p.customer_number || ''}
-                            placeholder="Ej: 011040"
-                            onBlur={(e) => updatePropiedadField(p.id, 'customer_number', e.target.value)}
-                          />
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <label className="text-sm text-gray-500 w-24">Work Order #:</label>
-                          <input 
-                            type="text"
-                            className="border rounded px-2 py-1 text-sm flex-1"
-                            defaultValue={p.work_order_number || ''}
-                            placeholder="Ej: 012327"
-                            onBlur={(e) => updatePropiedadField(p.id, 'work_order_number', e.target.value)}
-                          />
-                        </div>
-                      </div>
                       <div className="mt-3 flex items-center space-x-2">
                         <label className="text-sm text-gray-500">Township:</label>
                         <select 
@@ -1554,6 +1617,9 @@ export default function PTRSSystem() {
       telefono_principal: clienteSeleccionado?.telefono_principal || '',
       email: clienteSeleccionado?.email || '',
       direccion_correspondencia: clienteSeleccionado?.direccion_correspondencia || '',
+      ciudad_correspondencia: clienteSeleccionado?.ciudad_correspondencia || '',
+      estado_correspondencia: clienteSeleccionado?.estado_correspondencia || 'IL',
+      zip_correspondencia: clienteSeleccionado?.zip_correspondencia || '',
       estado: clienteSeleccionado?.estado || 'activo',
       customer_number: clienteSeleccionado?.customer_number || '',
       work_order_number: clienteSeleccionado?.work_order_number || '',
@@ -1580,16 +1646,6 @@ export default function PTRSSystem() {
                   <input className="w-full border rounded-lg px-3 py-2" value={form.apellido} onChange={(e) => setForm({...form, apellido: e.target.value})} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer #</label>
-                  <input className="w-full border rounded-lg px-3 py-2" value={form.customer_number} onChange={(e) => setForm({...form, customer_number: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Work Order #</label>
-                  <input className="w-full border rounded-lg px-3 py-2" value={form.work_order_number} onChange={(e) => setForm({...form, work_order_number: e.target.value})} />
-                </div>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.telefono_principal} onChange={(e) => setForm({...form, telefono_principal: e.target.value})} />
@@ -1600,10 +1656,24 @@ export default function PTRSSystem() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
-                <input className="w-full border rounded-lg px-3 py-2" value={form.direccion_correspondencia} onChange={(e) => setForm({...form, direccion_correspondencia: e.target.value})} />
+                <input className="w-full border rounded-lg px-3 py-2" placeholder="123 Main St" value={form.direccion_correspondencia} onChange={(e) => setForm({...form, direccion_correspondencia: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                  <input className="w-full border rounded-lg px-3 py-2" placeholder="Chicago" value={form.ciudad_correspondencia} onChange={(e) => setForm({...form, ciudad_correspondencia: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <input className="w-full border rounded-lg px-3 py-2" placeholder="IL" maxLength={2} value={form.estado_correspondencia} onChange={(e) => setForm({...form, estado_correspondencia: e.target.value.toUpperCase()})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP</label>
+                  <input className="w-full border rounded-lg px-3 py-2" placeholder="60647" value={form.zip_correspondencia} onChange={(e) => setForm({...form, zip_correspondencia: e.target.value})} />
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Estado Cliente</label>
                 <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
                   <option value="activo">Activo</option>
                   <option value="inactivo">Inactivo</option>
@@ -1984,6 +2054,7 @@ export default function PTRSSystem() {
                             {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
                           </span>
                           <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
+                          {f.archivo_url && <a href={f.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">📄 Ver PDF</a>}
                         </div>
                         <div className="flex space-x-3 text-xs text-gray-500 mt-2">
                           {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
@@ -2010,7 +2081,10 @@ export default function PTRSSystem() {
                 {propiedadApelaciones.length > 0 ? propiedadApelaciones.map((a, i) => (
                   <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
                     <div className="flex justify-between mb-2">
-                      <span className="font-semibold text-lg">{a.anio}</span>
+                      <div className="flex items-center space-x-3">
+                        <span className="font-semibold text-lg">{a.anio}</span>
+                        {a.archivo_url && <a href={a.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">📄 Ver Documento</a>}
+                      </div>
                       <span className={`px-2 py-0.5 rounded text-xs ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado}</span>
                     </div>
                     {a.ahorro && <p className="text-green-600 font-medium">Ahorro: ${Number(a.ahorro).toLocaleString()}</p>}
@@ -2059,6 +2133,265 @@ export default function PTRSSystem() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Modal Nueva Factura Propiedad
+  const ModalNuevaFacturaPropiedad = () => {
+    const [form, setForm] = useState({
+      customer_number: '',
+      work_order_number: '',
+      numero: '',
+      monto: '',
+      concepto: '',
+      fecha_factura: new Date().toISOString().split('T')[0],
+      fecha_emision: new Date().toISOString().split('T')[0],
+      estado: 'pendiente',
+      archivo_url: ''
+    });
+    const [archivo, setArchivo] = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setUploading(true);
+      try {
+        let archivoUrl = form.archivo_url;
+        if (archivo) {
+          archivoUrl = await uploadFile(archivo, 'facturas/' + propiedadSeleccionada?.pin?.replace(/-/g, ''), token);
+        }
+        await saveFacturaPropiedad({...form, archivo_url: archivoUrl, monto: parseFloat(form.monto) || 0});
+      } catch (err) {
+        notify('Error al subir archivo', 'error');
+      }
+      setUploading(false);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="p-6 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Nueva Factura</h3>
+              <p className="text-sm text-gray-500 font-mono">{propiedadSeleccionada?.pin}</p>
+            </div>
+            <button onClick={() => setModalActivo('expedientePropiedad')} className="text-gray-400 hover:text-gray-600">&times;</button>
+          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.customer_number} onChange={(e) => setForm({...form, customer_number: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Work Order #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.work_order_number} onChange={(e) => setForm({...form, work_order_number: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_factura} onChange={(e) => setForm({...form, fecha_factura: e.target.value, fecha_emision: e.target.value})} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto *</label>
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.monto} onChange={(e) => setForm({...form, monto: e.target.value})} required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagada">Pagada</option>
+                  <option value="cancelada">Cancelada</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📎 Subir PDF de Factura</label>
+                <input 
+                  type="file" 
+                  accept=".pdf,image/*"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  onChange={(e) => setArchivo(e.target.files?.[0] || null)}
+                />
+                {archivo && <p className="text-xs text-green-600 mt-1">✓ {archivo.name}</p>}
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo('expedientePropiedad')} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving || uploading} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{uploading ? 'Subiendo...' : saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Modal Nueva Nota Propiedad
+  const ModalNuevaNotaPropiedad = () => {
+    const [form, setForm] = useState({ tipo: 'nota', contenido: '' });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Nueva Nota</h3>
+              <p className="text-sm text-gray-500 font-mono">{propiedadSeleccionada?.pin}</p>
+            </div>
+            <button onClick={() => setModalActivo('expedientePropiedad')} className="text-gray-400 hover:text-gray-600">&times;</button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveNotaPropiedad(form); }}>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
+                  <option value="nota">Nota</option>
+                  <option value="llamada">Llamada</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contenido *</label>
+                <textarea className="w-full border rounded-lg px-3 py-2 h-32" value={form.contenido} onChange={(e) => setForm({...form, contenido: e.target.value})} required />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo('expedientePropiedad')} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Modal Nuevo Documento Propiedad
+  const ModalNuevoDocumentoPropiedad = () => {
+    const [form, setForm] = useState({ nombre: '', tipo: 'otro', archivo_url: '', notas: '' });
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Nuevo Documento</h3>
+              <p className="text-sm text-gray-500 font-mono">{propiedadSeleccionada?.pin}</p>
+            </div>
+            <button onClick={() => setModalActivo('expedientePropiedad')} className="text-gray-400 hover:text-gray-600">&times;</button>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); saveDocumentoPropiedad(form); }}>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
+                  <option value="titulo">Título</option>
+                  <option value="autorizacion">Autorización</option>
+                  <option value="factura">Factura</option>
+                  <option value="aprobacion">Aprobación</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link Google Drive</label>
+                <input className="w-full border rounded-lg px-3 py-2" placeholder="https://drive.google.com/..." value={form.archivo_url} onChange={(e) => setForm({...form, archivo_url: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo('expedientePropiedad')} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Modal Nueva Apelacion Propiedad
+  const ModalNuevaApelacionPropiedad = () => {
+    const [form, setForm] = useState({ anio: new Date().getFullYear(), estado: 'pendiente', ahorro: '', notas: '', archivo_url: '' });
+    const [archivo, setArchivo] = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setUploading(true);
+      try {
+        let archivoUrl = form.archivo_url;
+        if (archivo) {
+          archivoUrl = await uploadFile(archivo, 'apelaciones/' + propiedadSeleccionada?.pin?.replace(/-/g, ''), token);
+        }
+        await saveApelacionPropiedad({...form, archivo_url: archivoUrl, ahorro: parseFloat(form.ahorro) || 0});
+      } catch (err) {
+        notify('Error al subir archivo', 'error');
+      }
+      setUploading(false);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="p-6 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Nueva Apelación</h3>
+              <p className="text-sm text-gray-500 font-mono">{propiedadSeleccionada?.pin}</p>
+            </div>
+            <button onClick={() => setModalActivo('expedientePropiedad')} className="text-gray-400 hover:text-gray-600">&times;</button>
+          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Año *</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2" value={form.anio} onChange={(e) => setForm({...form, anio: parseInt(e.target.value)})} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="enviada">Enviada</option>
+                    <option value="aprobada">Aprobada</option>
+                    <option value="rechazada">Rechazada</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ahorro $</label>
+                <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.ahorro} onChange={(e) => setForm({...form, ahorro: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📎 Subir PDF de Aprobación</label>
+                <input 
+                  type="file" 
+                  accept=".pdf,image/*"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  onChange={(e) => setArchivo(e.target.files?.[0] || null)}
+                />
+                {archivo && <p className="text-xs text-green-600 mt-1">✓ {archivo.name}</p>}
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => setModalActivo('expedientePropiedad')} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving || uploading} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{uploading ? 'Subiendo...' : saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
         </div>
       </div>
     );
@@ -2399,6 +2732,10 @@ export default function PTRSSystem() {
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
       {modalActivo === 'transferirPropiedad' && <ModalTransferirPropiedad />}
       {modalActivo === 'expedientePropiedad' && <ModalExpedientePropiedad />}
+      {modalActivo === 'nuevaFacturaPropiedad' && <ModalNuevaFacturaPropiedad />}
+      {modalActivo === 'nuevaNotaPropiedad' && <ModalNuevaNotaPropiedad />}
+      {modalActivo === 'nuevoDocumentoPropiedad' && <ModalNuevoDocumentoPropiedad />}
+      {modalActivo === 'nuevaApelacionPropiedad' && <ModalNuevaApelacionPropiedad />}
       {modalActivo === 'nuevoUsuario' && <ModalNuevoUsuario />}
       {modalActivo === 'editarPlantilla' && <ModalEditarPlantilla />}
       
