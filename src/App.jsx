@@ -516,6 +516,24 @@ export default function PTRSSystem() {
         token
       });
       
+      // Create automatic factura to preserve customer/work order numbers
+      if (clienteOrigen.customer_number || clienteOrigen.work_order_number) {
+        await api('facturas', {
+          method: 'POST',
+          body: {
+            cliente_id: clienteDestino.id,
+            customer_number: clienteOrigen.customer_number || '',
+            work_order_number: clienteOrigen.work_order_number || '',
+            numero: 'FUSION-' + new Date().getTime().toString().slice(-6),
+            monto: 0,
+            concepto: `Registro de fusión: ${clienteOrigen.nombre || ''} ${clienteOrigen.apellido || ''}`,
+            fecha_emision: new Date().toISOString().split('T')[0],
+            estado: 'pendiente'
+          },
+          token
+        });
+      }
+      
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
