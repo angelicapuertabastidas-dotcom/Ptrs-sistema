@@ -883,8 +883,7 @@ export default function PTRSSystem() {
                   <div>
                     <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
-                      {cliente.customer_number && <span>#{cliente.customer_number}</span>}
-                      {cliente.work_order_number && <span>Orden: {cliente.work_order_number}</span>}
+                      {cliente.numero_ptrs && <span className="text-green-600 font-medium">{cliente.numero_ptrs}</span>}
                       {cliente.telefono_principal && <span>📞 {cliente.telefono_principal}</span>}
                       <span>🏠 {cliente.propiedades?.length || 0} prop.</span>
                     </div>
@@ -987,8 +986,7 @@ export default function PTRSSystem() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{cliente.nombre} {cliente.apellido}</h1>
                 <div className="flex items-center space-x-3 mt-1 text-sm text-gray-500">
-                  {cliente.customer_number && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Cliente #{cliente.customer_number}</span>}
-                  {cliente.work_order_number && <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded">Orden #{cliente.work_order_number}</span>}
+                  {cliente.numero_ptrs && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">{cliente.numero_ptrs}</span>}
                   <span className={`px-2 py-0.5 rounded ${cliente.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{cliente.estado || 'activo'}</span>
                 </div>
               </div>
