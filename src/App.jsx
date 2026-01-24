@@ -453,6 +453,26 @@ export default function PTRSSystem() {
     }
   };
 
+  const updatePropiedadField = async (propiedadId, field, value) => {
+    try {
+      await api(`propiedades?id=eq.${propiedadId}`, {
+        method: 'PATCH',
+        body: { [field]: value || null },
+        token
+      });
+      // Reload client to refresh properties
+      if (clienteSeleccionado) {
+        const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+        const data = await res.json();
+        if (data && data[0]) {
+          setClienteSeleccionado(data[0]);
+        }
+      }
+    } catch (e) {
+      notify('Error al actualizar', 'error');
+    }
+  };
+
   const mergeClientes = async (clienteOrigen, clienteDestino) => {
     setSaving(true);
     try {
@@ -994,6 +1014,28 @@ export default function PTRSSystem() {
                         <div>
                           <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
                           <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="flex items-center space-x-2">
+                          <label className="text-sm text-gray-500 w-24">Customer #:</label>
+                          <input 
+                            type="text"
+                            className="border rounded px-2 py-1 text-sm flex-1"
+                            defaultValue={p.customer_number || ''}
+                            placeholder="Ej: 011040"
+                            onBlur={(e) => updatePropiedadField(p.id, 'customer_number', e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <label className="text-sm text-gray-500 w-24">Work Order #:</label>
+                          <input 
+                            type="text"
+                            className="border rounded px-2 py-1 text-sm flex-1"
+                            defaultValue={p.work_order_number || ''}
+                            placeholder="Ej: 012327"
+                            onBlur={(e) => updatePropiedadField(p.id, 'work_order_number', e.target.value)}
+                          />
                         </div>
                       </div>
                       <div className="mt-3 flex items-center space-x-2">
