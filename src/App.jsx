@@ -1178,7 +1178,6 @@ export default function PTRSSystem() {
                           onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('facturas'); setModalActivo('expedientePropiedad'); }}
                         >
                           <p className="font-mono text-lg font-semibold text-blue-600 hover:underline">{p.pin}</p>
-                          <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
                         </div>
                         <div className="flex space-x-2">
                           <button 
@@ -1194,6 +1193,16 @@ export default function PTRSSystem() {
                             Transferir
                           </button>
                         </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="text-sm text-gray-500">Dirección:</label>
+                        <input 
+                          type="text"
+                          className="w-full border rounded px-2 py-1 text-sm mt-1"
+                          defaultValue={p.direccion || ''}
+                          placeholder="Agregar dirección..."
+                          onBlur={(e) => updatePropiedadField(p.id, 'direccion', e.target.value)}
+                        />
                       </div>
                       <div className="mt-3 flex items-center space-x-2">
                         <label className="text-sm text-gray-500">Township:</label>
