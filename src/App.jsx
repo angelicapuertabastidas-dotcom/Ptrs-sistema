@@ -1106,20 +1106,28 @@ export default function PTRSSystem() {
                   <h3 className="font-semibold text-gray-900">Facturas</h3>
                   <button onClick={() => setModalActivo('nuevaFactura')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
                 </div>
-                {facturas.length > 0 ? facturas.map((f, i) => (
-                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
+                {facturas.length > 0 ? facturas.sort((a, b) => {
+                  const dateA = a.fecha_factura || a.fecha_emision || '';
+                  const dateB = b.fecha_factura || b.fecha_emision || '';
+                  return dateB.localeCompare(dateA);
+                }).map((f, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 border-l-4 border-blue-400">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-medium">Factura #{f.numero || f.id?.substring(0, 8)}</p>
-                        <div className="flex space-x-3 text-xs text-gray-500 mt-1">
-                          {f.customer_number && <span>Customer: {f.customer_number}</span>}
-                          {f.work_order_number && <span>Work Order: {f.work_order_number}</span>}
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
+                            {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
+                          </span>
+                          <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">{f.concepto}</p>
-                        <p className="text-xs text-gray-400 mt-1">{f.fecha_emision}</p>
+                        <div className="flex space-x-3 text-xs text-gray-500 mt-2">
+                          {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
+                          {f.work_order_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Work Order: {f.work_order_number}</span>}
+                        </div>
+                        {f.concepto && <p className="text-sm text-gray-600 mt-2">{f.concepto}</p>}
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold">${f.monto || 0}</p>
+                        <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
                         <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
                       </div>
                     </div>
@@ -1683,6 +1691,7 @@ export default function PTRSSystem() {
       numero: '',
       monto: '',
       concepto: '',
+      fecha_factura: new Date().toISOString().split('T')[0],
       fecha_emision: new Date().toISOString().split('T')[0],
       estado: 'pendiente'
     });
@@ -1721,8 +1730,8 @@ export default function PTRSSystem() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_emision} onChange={(e) => setForm({...form, fecha_emision: e.target.value})} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Factura *</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_factura} onChange={(e) => setForm({...form, fecha_factura: e.target.value, fecha_emision: e.target.value})} required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
