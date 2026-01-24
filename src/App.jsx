@@ -179,23 +179,43 @@ export default function PTRSSystem() {
     setLoading(true);
     try {
       var offset = pagina * ITEMS_POR_PAGINA;
-      var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+      var data = [];
       
       if (search && search.trim()) {
-        var searchTerm = encodeURIComponent(search.trim());
-        url = 'clientes?select=*,propiedades(*)&or=(nombre.ilike.*' + searchTerm + '*,apellido.ilike.*' + searchTerm + '*,telefono_principal.ilike.*' + searchTerm + '*,customer_number.ilike.*' + searchTerm + '*,work_order_number.ilike.*' + searchTerm + '*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        // Use RPC function for advanced search (includes PIN search)
+        var res = await api('rpc/buscar_clientes', {
+          method: 'POST',
+          body: { termino: search.trim() },
+          token: token
+        });
+        var searchResults = await res.json();
+        
+        // Now get full client data with properties for each result
+        if (searchResults && searchResults.length > 0) {
+          var ids = searchResults.map(c => c.id);
+          var idsParam = 'in.(' + ids.join(',') + ')';
+          var fullRes = await api('clientes?select=*,propiedades(*)&id=' + idsParam + '&order=nombre.asc', { token: token });
+          data = await fullRes.json();
+          setTotalClientes(data.length);
+        } else {
+          data = [];
+          setTotalClientes(0);
+        }
+      } else {
+        // No search - paginated list
+        var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        var res = await api(url, { token: token });
+        
+        // Get total count from header
+        var range = res.headers.get('content-range');
+        if (range) {
+          var total = parseInt(range.split('/')[1]);
+          setTotalClientes(total || 0);
+        }
+        
+        data = await res.json();
       }
       
-      var res = await api(url, { token: token });
-      
-      // Get total count from header
-      var range = res.headers.get('content-range');
-      if (range) {
-        var total = parseInt(range.split('/')[1]);
-        setTotalClientes(total || 0);
-      }
-      
-      var data = await res.json();
       setClientes(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Error loading clientes:', e);
