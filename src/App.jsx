@@ -86,6 +86,9 @@ export default function PTRSSystem() {
   const [stats, setStats] = useState({ clientes: 0, propiedades: 0, sinAplicar: 0, pendientes: 0 });
   const [configTab, setConfigTab] = useState('usuarios');
   const [clienteParaMerge, setClienteParaMerge] = useState(null);
+  const [propiedadParaTransferir, setPropiedadParaTransferir] = useState(null);
+  const [busquedaTransferir, setBusquedaTransferir] = useState('');
+  const [resultadosTransferir, setResultadosTransferir] = useState([]);
   const [plantillaEditando, setPlantillaEditando] = useState(null);
   const [expedienteTab, setExpedienteTab] = useState('info');
   const [notas, setNotas] = useState([]);
@@ -471,6 +474,51 @@ export default function PTRSSystem() {
     } catch (e) {
       notify('Error al actualizar', 'error');
     }
+  };
+
+  const buscarClientesParaTransferir = async (termino) => {
+    if (!termino || termino.length < 2) {
+      setResultadosTransferir([]);
+      return;
+    }
+    try {
+      const res = await api('rpc/buscar_clientes', {
+        method: 'POST',
+        body: { termino: termino },
+        token
+      });
+      const data = await res.json();
+      setResultadosTransferir(data || []);
+    } catch (e) {
+      setResultadosTransferir([]);
+    }
+  };
+
+  const transferirPropiedad = async (propiedadId, nuevoClienteId) => {
+    setSaving(true);
+    try {
+      await api(`propiedades?id=eq.${propiedadId}`, {
+        method: 'PATCH',
+        body: { cliente_id: nuevoClienteId },
+        token
+      });
+      notify('Propiedad transferida');
+      setModalActivo(null);
+      setPropiedadParaTransferir(null);
+      setBusquedaTransferir('');
+      setResultadosTransferir([]);
+      // Reload current client
+      if (clienteSeleccionado) {
+        const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+        const data = await res.json();
+        if (data && data[0]) {
+          setClienteSeleccionado(data[0]);
+        }
+      }
+    } catch (e) {
+      notify('Error al transferir', 'error');
+    }
+    setSaving(false);
   };
 
   const mergeClientes = async (clienteOrigen, clienteDestino) => {
@@ -1013,6 +1061,12 @@ export default function PTRSSystem() {
                           <p className="font-mono text-lg font-semibold text-blue-600">{p.pin}</p>
                           <p className="text-gray-600">{p.direccion || 'Sin dirección'}</p>
                         </div>
+                        <button 
+                          onClick={() => { setPropiedadParaTransferir(p); setModalActivo('transferirPropiedad'); }}
+                          className="text-xs text-orange-600 hover:text-orange-800 border border-orange-300 px-2 py-1 rounded"
+                        >
+                          Transferir
+                        </button>
                       </div>
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="flex items-center space-x-2">
@@ -1826,6 +1880,55 @@ export default function PTRSSystem() {
     );
   };
 
+  // Modal Transferir Propiedad
+  const ModalTransferirPropiedad = () => {
+    if (!propiedadParaTransferir) return null;
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Transferir Propiedad</h3>
+            <button onClick={() => { setModalActivo(null); setPropiedadParaTransferir(null); setBusquedaTransferir(''); setResultadosTransferir([]); }} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <div className="p-6">
+            <div className="bg-blue-50 p-4 rounded-lg mb-4">
+              <p className="text-sm text-gray-600">Propiedad a transferir:</p>
+              <p className="font-mono font-semibold text-blue-600">{propiedadParaTransferir.pin}</p>
+              <p className="text-sm text-gray-500">{propiedadParaTransferir.direccion || 'Sin dirección'}</p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Buscar cliente destino:</label>
+              <input 
+                className="w-full border rounded-lg px-3 py-2" 
+                placeholder="Nombre, teléfono o customer #..."
+                value={busquedaTransferir}
+                onChange={(e) => {
+                  setBusquedaTransferir(e.target.value);
+                  buscarClientesParaTransferir(e.target.value);
+                }}
+              />
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              {resultadosTransferir.length > 0 ? resultadosTransferir.filter(c => c.id !== clienteSeleccionado?.id).map(c => (
+                <div key={c.id} className="p-3 border rounded-lg mb-2 hover:bg-gray-50 cursor-pointer flex justify-between items-center" onClick={() => transferirPropiedad(propiedadParaTransferir.id, c.id)}>
+                  <div>
+                    <p className="font-medium">{c.nombre} {c.apellido}</p>
+                    <p className="text-xs text-gray-500">{c.telefono_principal} • Customer #{c.customer_number}</p>
+                  </div>
+                  <span className="text-blue-600 text-sm">Seleccionar →</span>
+                </div>
+              )) : busquedaTransferir.length >= 2 ? (
+                <p className="text-gray-500 text-center py-4">No se encontraron clientes</p>
+              ) : (
+                <p className="text-gray-400 text-center py-4 text-sm">Escribe al menos 2 caracteres para buscar</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Merge Clients Modal
   const ModalMergeClientes = () => {
     const [clienteOrigen, setClienteOrigen] = useState(null);
@@ -2110,6 +2213,7 @@ export default function PTRSSystem() {
       {modalActivo === 'nuevaFactura' && <ModalNuevaFactura />}
       {modalActivo === 'nuevaApelacion' && <ModalNuevaApelacion />}
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
+      {modalActivo === 'transferirPropiedad' && <ModalTransferirPropiedad />}
       {modalActivo === 'nuevoUsuario' && <ModalNuevoUsuario />}
       {modalActivo === 'editarPlantilla' && <ModalEditarPlantilla />}
       
