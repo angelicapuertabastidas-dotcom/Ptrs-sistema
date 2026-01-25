@@ -1465,17 +1465,28 @@ export default function PTRSSystem() {
   };
 
   const Townships = () => {
-    const townshipsOrdenados = townships.map(t => ({
-      ...t,
-      estadoCalculado: calcularEstadoTownship(t)
-    })).sort((a, b) => {
+    const townshipsConEstado = townships.map(t => {
+      const estadoCalc = calcularEstadoTownship(t);
+      return {
+        ...t,
+        estadoCalculado: estadoCalc
+      };
+    });
+    
+    // Create copy before sorting to avoid mutation issues
+    const townshipsOrdenados = [...townshipsConEstado].sort((a, b) => {
       const orden = { abierto: 0, proximo: 1, cerrado: 2 };
-      return (orden[a.estadoCalculado.estado] || 2) - (orden[b.estadoCalculado.estado] || 2);
+      const estadoA = a.estadoCalculado?.estado || 'cerrado';
+      const estadoB = b.estadoCalculado?.estado || 'cerrado';
+      const ordenA = orden[estadoA];
+      const ordenB = orden[estadoB];
+      if (ordenA !== ordenB) return ordenA - ordenB;
+      return a.nombre.localeCompare(b.nombre);
     });
 
-    const abiertos = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'abierto').length;
-    const proximos = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'proximo').length;
-    const cerrados = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'cerrado').length;
+    const abiertos = townshipsOrdenados.filter(t => t.estadoCalculado?.estado === 'abierto').length;
+    const proximos = townshipsOrdenados.filter(t => t.estadoCalculado?.estado === 'proximo').length;
+    const cerrados = townshipsOrdenados.filter(t => t.estadoCalculado?.estado === 'cerrado').length;
 
     return (
     <div className="space-y-6">
