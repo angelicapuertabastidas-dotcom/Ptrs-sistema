@@ -1396,60 +1396,224 @@ export default function PTRSSystem() {
   };
 
   // Townships View
-  const Townships = () => (
+  const [townshipSeleccionado, setTownshipSeleccionado] = useState(null);
+  const [clientesTownship, setClientesTownship] = useState([]);
+  const [loadingTownship, setLoadingTownship] = useState(false);
+
+  // Calcular estado del township basado en fechas
+  const calcularEstadoTownship = (t) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    const inicioAssessor = t.fecha_inicio_assessor ? new Date(t.fecha_inicio_assessor) : null;
+    const finAssessor = t.fecha_fin_assessor ? new Date(t.fecha_fin_assessor) : null;
+    const inicioBor = t.fecha_inicio_bor ? new Date(t.fecha_inicio_bor) : null;
+    const finBor = t.fecha_fin_bor ? new Date(t.fecha_fin_bor) : null;
+    
+    // Verificar si BOR está abierto
+    if (inicioBor && finBor && hoy >= inicioBor && hoy <= finBor) {
+      const diasRestantes = Math.ceil((finBor - hoy) / (1000 * 60 * 60 * 24));
+      return { estado: 'abierto', tipo: 'Board of Review', fechaCierre: finBor, diasRestantes };
+    }
+    
+    // Verificar si Assessor está abierto
+    if (inicioAssessor && finAssessor && hoy >= inicioAssessor && hoy <= finAssessor) {
+      const diasRestantes = Math.ceil((finAssessor - hoy) / (1000 * 60 * 60 * 24));
+      return { estado: 'abierto', tipo: 'Assessor', fechaCierre: finAssessor, diasRestantes };
+    }
+    
+    // Verificar si está próximo a abrir (14 días)
+    if (inicioAssessor && hoy < inicioAssessor) {
+      const diasParaAbrir = Math.ceil((inicioAssessor - hoy) / (1000 * 60 * 60 * 24));
+      if (diasParaAbrir <= 14) {
+        return { estado: 'proximo', tipo: 'Assessor', fechaApertura: inicioAssessor, diasParaAbrir };
+      }
+    }
+    if (inicioBor && hoy < inicioBor) {
+      const diasParaAbrir = Math.ceil((inicioBor - hoy) / (1000 * 60 * 60 * 24));
+      if (diasParaAbrir <= 14) {
+        return { estado: 'proximo', tipo: 'Board of Review', fechaApertura: inicioBor, diasParaAbrir };
+      }
+    }
+    
+    return { estado: 'cerrado', tipo: null };
+  };
+
+  const cargarClientesPorTownship = async (township) => {
+    setLoadingTownship(true);
+    setTownshipSeleccionado(township);
+    try {
+      // Get clients that have properties in this township
+      const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)`, { token });
+      const propiedades = await res.json();
+      
+      // Get unique clients
+      const clientesMap = new Map();
+      propiedades.forEach(p => {
+        if (p.cliente && !clientesMap.has(p.cliente.id)) {
+          const clienteConProps = {...p.cliente, propiedades: []};
+          clientesMap.set(p.cliente.id, clienteConProps);
+        }
+        if (p.cliente) {
+          clientesMap.get(p.cliente.id).propiedades.push(p);
+        }
+      });
+      
+      setClientesTownship(Array.from(clientesMap.values()));
+    } catch (e) {
+      console.error('Error loading clients:', e);
+      setClientesTownship([]);
+    }
+    setLoadingTownship(false);
+  };
+
+  const Townships = () => {
+    // Ordenar townships: abiertos primero, luego próximos, luego cerrados
+    const townshipsOrdenados = [...townships].map(t => ({
+      ...t,
+      estadoCalculado: calcularEstadoTownship(t)
+    })).sort((a, b) => {
+      const orden = { abierto: 0, proximo: 1, cerrado: 2 };
+      return orden[a.estadoCalculado.estado] - orden[b.estadoCalculado.estado];
+    });
+
+    return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Clientes por Township</h1>
-      <div className="grid gap-4">
-        {townships.map((t, idx) => {
-          const clientesTwp = getClientesPorTownship(t.id);
-          const propiedadesTwp = getPropiedadesPorTownship(t.id);
-          const estado = t.estado_calculado || t.estado || 'cerrado';
-          
-          return (
-            <div key={idx} className="bg-white rounded-xl shadow-sm border p-6">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center space-x-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    estado === 'abierto' ? 'bg-green-100 text-green-600' : 
-                    estado === 'urgente' ? 'bg-red-100 text-red-600' : 
-                    estado === 'proximo' ? 'bg-yellow-100 text-yellow-600' : 
-                    'bg-gray-100 text-gray-600'
-                  }`}>
-                    <Icon name="mapPin" />
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <h1 className="text-2xl font-bold text-gray-900">
+          {townshipSeleccionado ? `Clientes en ${townshipSeleccionado.nombre}` : 'Townships - Calendario de Apelaciones'}
+        </h1>
+        {townshipSeleccionado && (
+          <button 
+            onClick={() => { setTownshipSeleccionado(null); setClientesTownship([]); }}
+            className="text-blue-600 hover:underline"
+          >
+            ← Ver todos los townships
+          </button>
+        )}
+      </div>
+
+      {/* Resumen */}
+      {!townshipSeleccionado && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <p className="text-3xl font-bold text-green-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'abierto').length}</p>
+            <p className="text-sm text-green-700">Abiertos ahora</p>
+          </div>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+            <p className="text-3xl font-bold text-yellow-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'proximo').length}</p>
+            <p className="text-sm text-yellow-700">Próximos a abrir</p>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+            <p className="text-3xl font-bold text-gray-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'cerrado').length}</p>
+            <p className="text-sm text-gray-700">Cerrados</p>
+          </div>
+        </div>
+      )}
+      
+      {!townshipSeleccionado ? (
+        <div className="grid gap-4">
+          {townshipsOrdenados.map((t, idx) => {
+            const propiedadesTwp = getPropiedadesPorTownship(t.id);
+            const { estado, tipo, fechaCierre, diasRestantes, fechaApertura, diasParaAbrir } = t.estadoCalculado;
+            
+            return (
+              <div 
+                key={idx} 
+                className={`bg-white rounded-xl shadow-sm border-l-4 p-6 cursor-pointer hover:shadow-md transition-shadow ${
+                  estado === 'abierto' ? 'border-green-500' : 
+                  estado === 'proximo' ? 'border-yellow-500' : 
+                  'border-gray-300'
+                }`}
+                onClick={() => cargarClientesPorTownship(t)}
+              >
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center space-x-4">
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                      estado === 'abierto' ? 'bg-green-100 text-green-600' : 
+                      estado === 'proximo' ? 'bg-yellow-100 text-yellow-600' : 
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      <Icon name="mapPin" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{t.nombre}</h3>
+                      <p className="text-sm text-gray-500">Código: {t.codigo}</p>
+                      {estado === 'abierto' && (
+                        <p className="text-sm text-green-600 font-medium">
+                          🟢 {tipo} - Cierra {fechaCierre?.toLocaleDateString('es-MX')} ({diasRestantes} días)
+                        </p>
+                      )}
+                      {estado === 'proximo' && (
+                        <p className="text-sm text-yellow-600 font-medium">
+                          🟡 {tipo} abre {fechaApertura?.toLocaleDateString('es-MX')} (en {diasParaAbrir} días)
+                        </p>
+                      )}
+                      {estado === 'cerrado' && t.fecha_fin_assessor && (
+                        <p className="text-sm text-gray-500">
+                          Assessor cerró: {new Date(t.fecha_fin_assessor).toLocaleDateString('es-MX')}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{t.nombre}</h3>
-                    <p className="text-sm text-gray-500">Código: {t.codigo}</p>
-                    {t.fecha_limite_assessor && (
-                      <p className="text-xs text-gray-400">Límite: {new Date(t.fecha_limite_assessor).toLocaleDateString('es-MX')}</p>
-                    )}
+                  <div className="flex items-center space-x-6">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-gray-900">{propiedadesTwp}</p>
+                      <p className="text-xs text-gray-500">Propiedades</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      estado === 'abierto' ? 'bg-green-100 text-green-700' : 
+                      estado === 'proximo' ? 'bg-yellow-100 text-yellow-700' : 
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {estado === 'abierto' ? '🔓 Abierto' : estado === 'proximo' ? '⏳ Próximo' : '🔒 Cerrado'}
+                    </span>
+                    <Icon name="chevron" />
                   </div>
-                </div>
-                <div className="flex items-center space-x-6">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{propiedadesTwp}</p>
-                    <p className="text-xs text-gray-500">Propiedades</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{clientesTwp}</p>
-                    <p className="text-xs text-gray-500">Clientes</p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-sm ${
-                    estado === 'abierto' ? 'bg-green-100 text-green-700' : 
-                    estado === 'urgente' ? 'bg-red-100 text-red-700' : 
-                    estado === 'proximo' ? 'bg-yellow-100 text-yellow-700' : 
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {estado}
-                  </span>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border">
+          <div className="p-4 border-b">
+            <p className="text-sm text-gray-500">
+              {loadingTownship ? 'Cargando...' : `${clientesTownship.length} clientes con propiedades en ${townshipSeleccionado.nombre}`}
+            </p>
+          </div>
+          <div className="divide-y max-h-[600px] overflow-y-auto">
+            {clientesTownship.map((cliente) => (
+              <div 
+                key={cliente.id} 
+                className="p-4 hover:bg-gray-50 cursor-pointer" 
+                onClick={() => { setClienteSeleccionado(cliente); setVistaActual('expediente'); }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="font-bold text-blue-600">{cliente.nombre?.[0] || '?'}</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
+                      <p className="text-sm text-gray-500">{cliente.telefono_principal || 'Sin teléfono'}</p>
+                      <p className="text-xs text-blue-600">{cliente.propiedades?.length || 0} propiedades en este township</p>
+                    </div>
+                  </div>
+                  <Icon name="chevron" />
+                </div>
+              </div>
+            ))}
+            {!loadingTownship && clientesTownship.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                No hay clientes con propiedades en este township
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )};
 
   // Pending Clients View
   const Pendientes = () => {
