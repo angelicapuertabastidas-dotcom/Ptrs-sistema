@@ -1443,11 +1443,9 @@ export default function PTRSSystem() {
     setLoadingTownship(true);
     setTownshipSeleccionado(township);
     try {
-      // Get clients that have properties in this township
       const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)`, { token });
       const propiedades = await res.json();
       
-      // Get unique clients
       const clientesMap = new Map();
       propiedades.forEach(p => {
         if (p.cliente && !clientesMap.has(p.cliente.id)) {
@@ -1468,14 +1466,17 @@ export default function PTRSSystem() {
   };
 
   const Townships = () => {
-    // Ordenar townships: abiertos primero, luego próximos, luego cerrados
-    const townshipsOrdenados = [...townships].map(t => ({
+    const townshipsOrdenados = townships.map(t => ({
       ...t,
       estadoCalculado: calcularEstadoTownship(t)
     })).sort((a, b) => {
       const orden = { abierto: 0, proximo: 1, cerrado: 2 };
-      return orden[a.estadoCalculado.estado] - orden[b.estadoCalculado.estado];
+      return (orden[a.estadoCalculado.estado] || 2) - (orden[b.estadoCalculado.estado] || 2);
     });
+
+    const abiertos = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'abierto').length;
+    const proximos = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'proximo').length;
+    const cerrados = townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'cerrado').length;
 
     return (
     <div className="space-y-6">
@@ -1497,15 +1498,15 @@ export default function PTRSSystem() {
       {!townshipSeleccionado && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <p className="text-3xl font-bold text-green-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'abierto').length}</p>
+            <p className="text-3xl font-bold text-green-600">{abiertos}</p>
             <p className="text-sm text-green-700">Abiertos ahora</p>
           </div>
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-            <p className="text-3xl font-bold text-yellow-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'proximo').length}</p>
+            <p className="text-3xl font-bold text-yellow-600">{proximos}</p>
             <p className="text-sm text-yellow-700">Próximos a abrir</p>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-            <p className="text-3xl font-bold text-gray-600">{townshipsOrdenados.filter(t => t.estadoCalculado.estado === 'cerrado').length}</p>
+            <p className="text-3xl font-bold text-gray-600">{cerrados}</p>
             <p className="text-sm text-gray-700">Cerrados</p>
           </div>
         </div>
