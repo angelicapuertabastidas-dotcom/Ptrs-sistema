@@ -1613,7 +1613,8 @@ export default function PTRSSystem() {
         </div>
       )}
     </div>
-  )};
+  );
+};
 
   // Pending Clients View
   const Pendientes = () => {
