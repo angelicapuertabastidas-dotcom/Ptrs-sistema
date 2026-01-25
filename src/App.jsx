@@ -833,10 +833,50 @@ export default function PTRSSystem() {
     return count;
   };
 
-  // Get townships with alerts (open or urgent)
-  const townshipsConAlertas = townships.filter(t => 
-    t.estado === 'urgente' || t.estado === 'abierto' || t.estado_calculado === 'urgente' || t.estado_calculado === 'abierto'
-  );
+  // Calcular estado del township basado en fechas
+  const calcularEstadoTownship = (t) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    const inicioAssessor = t.fecha_inicio_assessor ? new Date(t.fecha_inicio_assessor) : null;
+    const finAssessor = t.fecha_fin_assessor ? new Date(t.fecha_fin_assessor) : null;
+    const inicioBor = t.fecha_inicio_bor ? new Date(t.fecha_inicio_bor) : null;
+    const finBor = t.fecha_fin_bor ? new Date(t.fecha_fin_bor) : null;
+    
+    // Verificar si BOR está abierto
+    if (inicioBor && finBor && hoy >= inicioBor && hoy <= finBor) {
+      const diasRestantes = Math.ceil((finBor - hoy) / (1000 * 60 * 60 * 24));
+      return { estado: 'abierto', tipo: 'Board of Review', fechaCierre: finBor, diasRestantes };
+    }
+    
+    // Verificar si Assessor está abierto
+    if (inicioAssessor && finAssessor && hoy >= inicioAssessor && hoy <= finAssessor) {
+      const diasRestantes = Math.ceil((finAssessor - hoy) / (1000 * 60 * 60 * 24));
+      return { estado: 'abierto', tipo: 'Assessor', fechaCierre: finAssessor, diasRestantes };
+    }
+    
+    // Verificar si está próximo a abrir (14 días)
+    if (inicioAssessor && hoy < inicioAssessor) {
+      const diasParaAbrir = Math.ceil((inicioAssessor - hoy) / (1000 * 60 * 60 * 24));
+      if (diasParaAbrir <= 14) {
+        return { estado: 'proximo', tipo: 'Assessor', fechaApertura: inicioAssessor, diasParaAbrir };
+      }
+    }
+    if (inicioBor && hoy < inicioBor) {
+      const diasParaAbrir = Math.ceil((inicioBor - hoy) / (1000 * 60 * 60 * 24));
+      if (diasParaAbrir <= 14) {
+        return { estado: 'proximo', tipo: 'Board of Review', fechaApertura: inicioBor, diasParaAbrir };
+      }
+    }
+    
+    return { estado: 'cerrado', tipo: null };
+  };
+
+  // Get townships with alerts (open or upcoming)
+  const townshipsConAlertas = townships.filter(t => {
+    const estado = calcularEstadoTownship(t);
+    return estado.estado === 'abierto' || estado.estado === 'proximo';
+  }).map(t => ({...t, estadoCalculado: calcularEstadoTownship(t)}));
 
   if (authLoading) {
     return (
@@ -938,15 +978,14 @@ export default function PTRSSystem() {
           Alertas de Townships
         </h2>
         {townshipsConAlertas.length > 0 ? townshipsConAlertas.slice(0, 5).map((t, idx) => {
-          const estado = t.estado_calculado || t.estado;
+          const { estado, tipo, fechaCierre, diasRestantes } = t.estadoCalculado;
           return (
-            <div key={idx} className={`p-4 rounded-lg border-l-4 ${estado === 'urgente' ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
+            <div key={idx} className={`p-4 rounded-lg border-l-4 ${diasRestantes <= 7 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <span className={`font-bold ${estado === 'urgente' ? 'text-red-700' : 'text-green-700'}`}>{t.nombre}</span>
+                  <span className={`font-bold ${diasRestantes <= 7 ? 'text-red-700' : 'text-green-700'}`}>{t.nombre}</span>
                   <span className="text-gray-600 ml-2">
-                    {estado === 'urgente' ? '- ¡Cierra pronto!' : '- Abierto'}
-                    {t.fecha_limite_assessor && ` (hasta ${new Date(t.fecha_limite_assessor).toLocaleDateString('es-MX')})`}
+                    - {tipo} {estado === 'abierto' ? `cierra ${fechaCierre?.toLocaleDateString('es-MX')} (${diasRestantes} días)` : 'próximo a abrir'}
                   </span>
                 </div>
                 <button className="text-blue-600 text-sm font-medium hover:underline" onClick={() => setVistaActual('townships')}>Ver</button>
@@ -954,7 +993,7 @@ export default function PTRSSystem() {
             </div>
           );
         }) : (
-          <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded-lg">No hay townships abiertos actualmente. Configura las fechas en Configuración → Fechas Townships.</p>
+          <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded-lg">No hay townships abiertos actualmente.</p>
         )}
       </div>
 
@@ -962,7 +1001,7 @@ export default function PTRSSystem() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard icon="users" label="Total Clientes" value={stats.clientes.toLocaleString()} color="blue" />
         <StatCard icon="home" label="Propiedades" value={stats.propiedades.toLocaleString()} color="green" />
-        <StatCard icon="alert" label="Townships Abiertos" value={townshipsConAlertas.length} color="red" />
+        <StatCard icon="alert" label="Townships Abiertos" value={townshipsConAlertas.filter(t => t.estadoCalculado.estado === 'abierto').length} color="red" />
         <StatCard icon="dollar" label="Pagos Pendientes" value={`$${stats.pendientes.toLocaleString()}`} color="yellow" />
       </div>
 
@@ -1398,44 +1437,6 @@ export default function PTRSSystem() {
   };
 
   // Townships View
-  // Calcular estado del township basado en fechas
-  const calcularEstadoTownship = (t) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    
-    const inicioAssessor = t.fecha_inicio_assessor ? new Date(t.fecha_inicio_assessor) : null;
-    const finAssessor = t.fecha_fin_assessor ? new Date(t.fecha_fin_assessor) : null;
-    const inicioBor = t.fecha_inicio_bor ? new Date(t.fecha_inicio_bor) : null;
-    const finBor = t.fecha_fin_bor ? new Date(t.fecha_fin_bor) : null;
-    
-    // Verificar si BOR está abierto
-    if (inicioBor && finBor && hoy >= inicioBor && hoy <= finBor) {
-      const diasRestantes = Math.ceil((finBor - hoy) / (1000 * 60 * 60 * 24));
-      return { estado: 'abierto', tipo: 'Board of Review', fechaCierre: finBor, diasRestantes };
-    }
-    
-    // Verificar si Assessor está abierto
-    if (inicioAssessor && finAssessor && hoy >= inicioAssessor && hoy <= finAssessor) {
-      const diasRestantes = Math.ceil((finAssessor - hoy) / (1000 * 60 * 60 * 24));
-      return { estado: 'abierto', tipo: 'Assessor', fechaCierre: finAssessor, diasRestantes };
-    }
-    
-    // Verificar si está próximo a abrir (14 días)
-    if (inicioAssessor && hoy < inicioAssessor) {
-      const diasParaAbrir = Math.ceil((inicioAssessor - hoy) / (1000 * 60 * 60 * 24));
-      if (diasParaAbrir <= 14) {
-        return { estado: 'proximo', tipo: 'Assessor', fechaApertura: inicioAssessor, diasParaAbrir };
-      }
-    }
-    if (inicioBor && hoy < inicioBor) {
-      const diasParaAbrir = Math.ceil((inicioBor - hoy) / (1000 * 60 * 60 * 24));
-      if (diasParaAbrir <= 14) {
-        return { estado: 'proximo', tipo: 'Board of Review', fechaApertura: inicioBor, diasParaAbrir };
-      }
-    }
-    
-    return { estado: 'cerrado', tipo: null };
-  };
 
   const cargarClientesPorTownship = async (township) => {
     setLoadingTownship(true);
