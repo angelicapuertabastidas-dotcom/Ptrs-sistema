@@ -129,6 +129,7 @@ export default function PTRSSystem() {
   const [clientesTownship, setClientesTownship] = useState([]);
   const [loadingTownship, setLoadingTownship] = useState(false);
   const [buscandoDatosCondado, setBuscandoDatosCondado] = useState(false);
+  const [mostrarTodasAlertas, setMostrarTodasAlertas] = useState(false);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -952,8 +953,11 @@ export default function PTRSSystem() {
     </div>
   );
 
-  const StatCard = ({ icon, label, value, color }) => (
-    <div className="bg-white rounded-xl shadow-sm border p-6">
+  const StatCard = ({ icon, label, value, color, onClick }) => (
+    <div 
+      className={`bg-white rounded-xl shadow-sm border p-6 ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      onClick={onClick}
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-gray-500 text-sm">{label}</p>
@@ -966,43 +970,89 @@ export default function PTRSSystem() {
     </div>
   );
 
+  // Contar pendientes por aplicar (clientes sin propiedades)
+  const clientesPendientesAplicar = clientes.filter(c => !c.propiedades || c.propiedades.length === 0).length;
+
   // Dashboard View
-  const Dashboard = () => (
+  const Dashboard = () => {
+    const alertasAMostrar = mostrarTodasAlertas ? townshipsConAlertas : townshipsConAlertas.slice(0, 3);
+    
+    return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
       
       {/* Township Alerts */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-700 flex items-center">
-          <span className="text-orange-500 mr-2"><Icon name="bell" /></span>
-          Alertas de Townships
-        </h2>
-        {townshipsConAlertas.length > 0 ? townshipsConAlertas.slice(0, 5).map((t, idx) => {
-          const { estado, tipo, fechaCierre, diasRestantes } = t.estadoCalculado;
-          return (
-            <div key={idx} className={`p-4 rounded-lg border-l-4 ${diasRestantes <= 7 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className={`font-bold ${diasRestantes <= 7 ? 'text-red-700' : 'text-green-700'}`}>{t.nombre}</span>
-                  <span className="text-gray-600 ml-2">
-                    - {tipo} {estado === 'abierto' ? `cierra ${fechaCierre?.toLocaleDateString('es-MX')} (${diasRestantes} días)` : 'próximo a abrir'}
-                  </span>
+      {townshipsConAlertas.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-700 flex items-center">
+              <span className="text-orange-500 mr-2"><Icon name="bell" /></span>
+              Alertas de Townships ({townshipsConAlertas.length})
+            </h2>
+            {townshipsConAlertas.length > 3 && (
+              <button 
+                onClick={() => setMostrarTodasAlertas(!mostrarTodasAlertas)}
+                className="text-blue-600 text-sm font-medium hover:underline"
+              >
+                {mostrarTodasAlertas ? 'Ver menos' : `Ver todos (${townshipsConAlertas.length})`}
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
+            {alertasAMostrar.map((t, idx) => {
+              const { estado, tipo, fechaCierre, diasRestantes } = t.estadoCalculado;
+              return (
+                <div 
+                  key={idx} 
+                  className={`p-3 rounded-lg border-l-4 cursor-pointer hover:opacity-90 ${diasRestantes <= 7 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}
+                  onClick={() => setVistaActual('townships')}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className={`font-bold ${diasRestantes <= 7 ? 'text-red-700' : 'text-green-700'}`}>{t.nombre}</span>
+                      <span className="text-gray-600 ml-2 text-sm">
+                        - {tipo} cierra {fechaCierre?.toLocaleDateString('es-MX')} ({diasRestantes} días)
+                      </span>
+                    </div>
+                    <Icon name="chevron" />
+                  </div>
                 </div>
-                <button className="text-blue-600 text-sm font-medium hover:underline" onClick={() => setVistaActual('townships')}>Ver</button>
-              </div>
-            </div>
-          );
-        }) : (
-          <p className="text-gray-500 text-sm p-4 bg-gray-50 rounded-lg">No hay townships abiertos actualmente.</p>
-        )}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard icon="users" label="Total Clientes" value={stats.clientes.toLocaleString()} color="blue" />
-        <StatCard icon="home" label="Propiedades" value={stats.propiedades.toLocaleString()} color="green" />
-        <StatCard icon="alert" label="Townships Abiertos" value={townshipsConAlertas.filter(t => t.estadoCalculado.estado === 'abierto').length} color="red" />
-        <StatCard icon="dollar" label="Pagos Pendientes" value={`$${stats.pendientes.toLocaleString()}`} color="yellow" />
+        <StatCard 
+          icon="users" 
+          label="Total Clientes" 
+          value={stats.clientes.toLocaleString()} 
+          color="blue" 
+          onClick={() => setVistaActual('buscar')}
+        />
+        <StatCard 
+          icon="home" 
+          label="Propiedades" 
+          value={stats.propiedades.toLocaleString()} 
+          color="green" 
+          onClick={() => setVistaActual('buscar')}
+        />
+        <StatCard 
+          icon="mapPin" 
+          label="Townships Abiertos" 
+          value={townshipsConAlertas.filter(t => t.estadoCalculado?.estado === 'abierto').length} 
+          color="red" 
+          onClick={() => setVistaActual('townships')}
+        />
+        <StatCard 
+          icon="alert" 
+          label="Pendientes Aplicar" 
+          value={clientesPendientesAplicar} 
+          color="yellow" 
+          onClick={() => setVistaActual('pendientes')}
+        />
       </div>
 
       {/* Quick Search */}
@@ -1044,6 +1094,7 @@ export default function PTRSSystem() {
       </div>
     </div>
   );
+  };
 
   // Search View
   const totalPaginas = Math.ceil(totalClientes / ITEMS_POR_PAGINA);
