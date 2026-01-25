@@ -1734,12 +1734,6 @@ export default function PTRSSystem() {
     setLoadingPendientes(false);
   };
 
-  useEffect(() => {
-    if (vistaActual === 'pendientes' && townships.length > 0) {
-      cargarPendientesTownshipsAbiertos();
-    }
-  }, [vistaActual, townships]);
-
   const Pendientes = () => {
     const clientesSinPropiedades = clientes.filter(c => !c.propiedades || c.propiedades.length === 0);
     const totalPendientesTwp = pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0);
@@ -1767,7 +1761,16 @@ export default function PTRSSystem() {
         {/* Townships Abiertos Tab */}
         {pendientesTab === 'townships' && (
           <div className="space-y-4">
-            <p className="text-gray-500">Propiedades en townships abiertos que no tienen factura de {new Date().getFullYear()}.</p>
+            <div className="flex items-center justify-between">
+              <p className="text-gray-500">Propiedades en townships abiertos que no tienen factura de {new Date().getFullYear()}.</p>
+              <button 
+                onClick={() => cargarPendientesTownshipsAbiertos()}
+                disabled={loadingPendientes}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loadingPendientes ? 'Cargando...' : '🔄 Actualizar'}
+              </button>
+            </div>
             
             {loadingPendientes ? (
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
@@ -1824,7 +1827,9 @@ export default function PTRSSystem() {
                 <p className="text-gray-500">
                   {townshipsConAlertas.length === 0 
                     ? 'No hay townships abiertos actualmente' 
-                    : '¡Todas las propiedades en townships abiertos tienen factura de este año!'}
+                    : pendientesAbiertos.length === 0 && !loadingPendientes
+                      ? 'Haz clic en "Actualizar" para cargar las propiedades pendientes'
+                      : '¡Todas las propiedades en townships abiertos tienen factura de este año!'}
                 </p>
               </div>
             )}
