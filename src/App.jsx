@@ -125,6 +125,10 @@ export default function PTRSSystem() {
   const [propiedadDocumentos, setPropiedadDocumentos] = useState([]);
   const [propiedadNotas, setPropiedadNotas] = useState([]);
   const [propiedadApelaciones, setPropiedadApelaciones] = useState([]);
+  const [townshipSeleccionado, setTownshipSeleccionado] = useState(null);
+  const [clientesTownship, setClientesTownship] = useState([]);
+  const [loadingTownship, setLoadingTownship] = useState(false);
+  const [buscandoDatosCondado, setBuscandoDatosCondado] = useState(false);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -613,8 +617,6 @@ export default function PTRSSystem() {
   };
 
   // Buscar datos del Cook County Assessor
-  const [buscandoDatosCondado, setBuscandoDatosCondado] = useState(false);
-  
   const buscarDatosCondado = async (propiedad) => {
     if (!propiedad?.pin) return;
     setBuscandoDatosCondado(true);
@@ -1396,10 +1398,6 @@ export default function PTRSSystem() {
   };
 
   // Townships View
-  const [townshipSeleccionado, setTownshipSeleccionado] = useState(null);
-  const [clientesTownship, setClientesTownship] = useState([]);
-  const [loadingTownship, setLoadingTownship] = useState(false);
-
   // Calcular estado del township basado en fechas
   const calcularEstadoTownship = (t) => {
     const hoy = new Date();
@@ -1615,7 +1613,7 @@ export default function PTRSSystem() {
       )}
     </div>
   );
-};
+  };
 
   // Pending Clients View
   const Pendientes = () => {
