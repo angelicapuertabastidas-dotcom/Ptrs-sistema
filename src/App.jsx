@@ -130,6 +130,9 @@ export default function PTRSSystem() {
   const [loadingTownship, setLoadingTownship] = useState(false);
   const [buscandoDatosCondado, setBuscandoDatosCondado] = useState(false);
   const [mostrarTodasAlertas, setMostrarTodasAlertas] = useState(false);
+  const [pendientesAbiertos, setPendientesAbiertos] = useState([]);
+  const [loadingPendientes, setLoadingPendientes] = useState(false);
+  const [pendientesTab, setPendientesTab] = useState('townships');
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -1679,42 +1682,186 @@ export default function PTRSSystem() {
   };
 
   // Pending Clients View
+  const cargarPendientesTownshipsAbiertos = async () => {
+    setLoadingPendientes(true);
+    try {
+      // Obtener IDs de townships abiertos
+      const townshipsAbiertosIds = townships
+        .filter(t => calcularEstadoTownship(t).estado === 'abierto')
+        .map(t => t.id);
+      
+      if (townshipsAbiertosIds.length === 0) {
+        setPendientesAbiertos([]);
+        setLoadingPendientes(false);
+        return;
+      }
+
+      // Obtener propiedades en townships abiertos con su cliente y facturas
+      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
+      const propiedades = await res.json();
+      
+      const anioActual = new Date().getFullYear();
+      
+      // Filtrar propiedades sin factura del año actual
+      const pendientes = propiedades.filter(p => {
+        if (!p.facturas || p.facturas.length === 0) return true;
+        const tieneFacturaAnioActual = p.facturas.some(f => {
+          const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
+          return anioFactura === anioActual;
+        });
+        return !tieneFacturaAnioActual;
+      });
+
+      // Agrupar por township
+      const agrupadosPorTownship = {};
+      pendientes.forEach(p => {
+        const twp = townships.find(t => t.id === p.township_id);
+        const twpNombre = twp?.nombre || 'Sin Township';
+        if (!agrupadosPorTownship[twpNombre]) {
+          agrupadosPorTownship[twpNombre] = {
+            township: twp,
+            propiedades: []
+          };
+        }
+        agrupadosPorTownship[twpNombre].propiedades.push(p);
+      });
+
+      setPendientesAbiertos(Object.values(agrupadosPorTownship));
+    } catch (e) {
+      console.error('Error loading pendientes:', e);
+      setPendientesAbiertos([]);
+    }
+    setLoadingPendientes(false);
+  };
+
+  useEffect(() => {
+    if (vistaActual === 'pendientes' && townships.length > 0) {
+      cargarPendientesTownshipsAbiertos();
+    }
+  }, [vistaActual, townships]);
+
   const Pendientes = () => {
     const clientesSinPropiedades = clientes.filter(c => !c.propiedades || c.propiedades.length === 0);
+    const totalPendientesTwp = pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0);
     
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">Clientes Pendientes por Aplicar</h1>
-        <p className="text-gray-500">Clientes que no tienen propiedades registradas o pendientes de aplicación.</p>
+        <h1 className="text-2xl font-bold text-gray-900">Pendientes por Aplicar</h1>
         
-        <div className="bg-white rounded-xl shadow-sm border">
-          <div className="p-4 border-b">
-            <p className="text-sm text-gray-500">{clientesSinPropiedades.length} clientes pendientes</p>
-          </div>
-          <div className="divide-y max-h-[600px] overflow-y-auto">
-            {clientesSinPropiedades.map((cliente) => (
-              <div key={cliente.id} className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => { setClienteSeleccionado(cliente); setVistaActual('expediente'); }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                      <Icon name="alert" />
+        {/* Tabs */}
+        <div className="flex space-x-4 border-b">
+          <button
+            onClick={() => setPendientesTab('townships')}
+            className={`pb-3 px-1 text-sm font-medium border-b-2 ${pendientesTab === 'townships' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            🔓 Townships Abiertos ({totalPendientesTwp})
+          </button>
+          <button
+            onClick={() => setPendientesTab('sinPropiedades')}
+            className={`pb-3 px-1 text-sm font-medium border-b-2 ${pendientesTab === 'sinPropiedades' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            ⚠️ Sin Propiedades ({clientesSinPropiedades.length})
+          </button>
+        </div>
+
+        {/* Townships Abiertos Tab */}
+        {pendientesTab === 'townships' && (
+          <div className="space-y-4">
+            <p className="text-gray-500">Propiedades en townships abiertos que no tienen factura de {new Date().getFullYear()}.</p>
+            
+            {loadingPendientes ? (
+              <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+                <p className="text-gray-500">Cargando...</p>
+              </div>
+            ) : pendientesAbiertos.length > 0 ? (
+              pendientesAbiertos.map((grupo, idx) => {
+                const estadoTwp = calcularEstadoTownship(grupo.township);
+                return (
+                  <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                    <div className="p-4 bg-green-50 border-b border-green-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-green-800">{grupo.township?.nombre}</h3>
+                        <p className="text-sm text-green-600">
+                          Board of Review cierra {estadoTwp.fechaCierre?.toLocaleDateString('es-MX')} ({estadoTwp.diasRestantes} días)
+                        </p>
+                      </div>
+                      <span className="bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+                        {grupo.propiedades.length} pendientes
+                      </span>
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
-                      <p className="text-sm text-gray-500">{cliente.telefono_principal || 'Sin teléfono'}</p>
+                    <div className="divide-y max-h-[300px] overflow-y-auto">
+                      {grupo.propiedades.map((p, pIdx) => (
+                        <div 
+                          key={pIdx} 
+                          className="p-4 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => {
+                            if (p.cliente) {
+                              const clienteConProps = {...p.cliente, propiedades: [p]};
+                              setClienteSeleccionado(clienteConProps);
+                              setVistaActual('expediente');
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-mono text-blue-600 font-semibold">{p.pin}</p>
+                              <p className="text-sm text-gray-600">{p.direccion || 'Sin dirección'}</p>
+                              <p className="text-sm text-gray-500">{p.cliente?.nombre} {p.cliente?.apellido}</p>
+                            </div>
+                            <Icon name="chevron" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <Icon name="chevron" />
+                );
+              })
+            ) : (
+              <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Icon name="check" />
                 </div>
-              </div>
-            ))}
-            {clientesSinPropiedades.length === 0 && (
-              <div className="p-8 text-center text-gray-500">
-                ¡Todos los clientes tienen propiedades registradas!
+                <p className="text-gray-500">
+                  {townshipsConAlertas.length === 0 
+                    ? 'No hay townships abiertos actualmente' 
+                    : '¡Todas las propiedades en townships abiertos tienen factura de este año!'}
+                </p>
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* Sin Propiedades Tab */}
+        {pendientesTab === 'sinPropiedades' && (
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="p-4 border-b">
+              <p className="text-sm text-gray-500">Clientes que no tienen propiedades registradas</p>
+            </div>
+            <div className="divide-y max-h-[600px] overflow-y-auto">
+              {clientesSinPropiedades.map((cliente) => (
+                <div key={cliente.id} className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => { setClienteSeleccionado(cliente); setVistaActual('expediente'); }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                        <Icon name="alert" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
+                        <p className="text-sm text-gray-500">{cliente.telefono_principal || 'Sin teléfono'}</p>
+                      </div>
+                    </div>
+                    <Icon name="chevron" />
+                  </div>
+                </div>
+              ))}
+              {clientesSinPropiedades.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                  ¡Todos los clientes tienen propiedades registradas!
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
