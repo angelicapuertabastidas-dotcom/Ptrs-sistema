@@ -371,6 +371,60 @@ export default function PTRSSystem() {
     }
   }, [propiedadSeleccionada, token]);
 
+  // Load pendientes for open townships
+  const cargarPendientesTownshipsAbiertos = async () => {
+    if (loadingPendientes) return;
+    setLoadingPendientes(true);
+    try {
+      const townshipsAbiertosIds = townships
+        .filter(t => calcularEstadoTownship(t).estado === 'abierto')
+        .map(t => t.id);
+      
+      if (townshipsAbiertosIds.length === 0) {
+        setPendientesAbiertos([]);
+        setLoadingPendientes(false);
+        return;
+      }
+
+      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
+      const propiedades = await res.json();
+      
+      const anioActual = new Date().getFullYear();
+      
+      const pendientes = propiedades.filter(p => {
+        if (!p.facturas || p.facturas.length === 0) return true;
+        const tieneFacturaAnioActual = p.facturas.some(f => {
+          const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
+          return anioFactura === anioActual;
+        });
+        return !tieneFacturaAnioActual;
+      });
+
+      const agrupadosPorTownship = {};
+      pendientes.forEach(p => {
+        const twp = townships.find(t => t.id === p.township_id);
+        const twpNombre = twp?.nombre || 'Sin Township';
+        if (!agrupadosPorTownship[twpNombre]) {
+          agrupadosPorTownship[twpNombre] = { township: twp, propiedades: [] };
+        }
+        agrupadosPorTownship[twpNombre].propiedades.push(p);
+      });
+
+      setPendientesAbiertos(Object.values(agrupadosPorTownship));
+    } catch (e) {
+      console.error('Error loading pendientes:', e);
+      setPendientesAbiertos([]);
+    }
+    setLoadingPendientes(false);
+  };
+
+  // Auto-load pendientes when entering that view
+  useEffect(() => {
+    if (vistaActual === 'pendientes' && townships.length > 0) {
+      cargarPendientesTownshipsAbiertos();
+    }
+  }, [vistaActual, townships]);
+
   // CRUD Operations
   const saveCliente = async (data) => {
     setSaving(true);
@@ -1682,58 +1736,6 @@ export default function PTRSSystem() {
   };
 
   // Pending Clients View
-  const cargarPendientesTownshipsAbiertos = async () => {
-    setLoadingPendientes(true);
-    try {
-      // Obtener IDs de townships abiertos
-      const townshipsAbiertosIds = townships
-        .filter(t => calcularEstadoTownship(t).estado === 'abierto')
-        .map(t => t.id);
-      
-      if (townshipsAbiertosIds.length === 0) {
-        setPendientesAbiertos([]);
-        setLoadingPendientes(false);
-        return;
-      }
-
-      // Obtener propiedades en townships abiertos con su cliente y facturas
-      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
-      const propiedades = await res.json();
-      
-      const anioActual = new Date().getFullYear();
-      
-      // Filtrar propiedades sin factura del año actual
-      const pendientes = propiedades.filter(p => {
-        if (!p.facturas || p.facturas.length === 0) return true;
-        const tieneFacturaAnioActual = p.facturas.some(f => {
-          const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
-          return anioFactura === anioActual;
-        });
-        return !tieneFacturaAnioActual;
-      });
-
-      // Agrupar por township
-      const agrupadosPorTownship = {};
-      pendientes.forEach(p => {
-        const twp = townships.find(t => t.id === p.township_id);
-        const twpNombre = twp?.nombre || 'Sin Township';
-        if (!agrupadosPorTownship[twpNombre]) {
-          agrupadosPorTownship[twpNombre] = {
-            township: twp,
-            propiedades: []
-          };
-        }
-        agrupadosPorTownship[twpNombre].propiedades.push(p);
-      });
-
-      setPendientesAbiertos(Object.values(agrupadosPorTownship));
-    } catch (e) {
-      console.error('Error loading pendientes:', e);
-      setPendientesAbiertos([]);
-    }
-    setLoadingPendientes(false);
-  };
-
   const Pendientes = () => {
     const clientesSinPropiedades = clientes.filter(c => !c.propiedades || c.propiedades.length === 0);
     const totalPendientesTwp = pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0);
