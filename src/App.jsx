@@ -133,6 +133,7 @@ export default function PTRSSystem() {
   const [pendientesAbiertos, setPendientesAbiertos] = useState([]);
   const [loadingPendientes, setLoadingPendientes] = useState(false);
   const [pendientesTab, setPendientesTab] = useState('townships');
+  const [conteosPorTownship, setConteosPorTownship] = useState({});
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -306,6 +307,77 @@ export default function PTRSSystem() {
       loadTownships();
     }
   }, [token, loadStats, loadClientes, loadTownships]);
+
+  // Load property counts per township after townships load
+  useEffect(() => {
+    if (token && townships.length > 0) {
+      // Load property counts per township
+      const loadConteos = async () => {
+        try {
+          const res = await api('propiedades?select=township_id', { token });
+          const props = await res.json();
+          const conteos = {};
+          props.forEach(p => {
+            if (p.township_id) {
+              conteos[p.township_id] = (conteos[p.township_id] || 0) + 1;
+            }
+          });
+          setConteosPorTownship(conteos);
+        } catch (e) {
+          console.error('Error loading conteos:', e);
+        }
+      };
+      loadConteos();
+      
+      // Load pendientes for dashboard
+      const loadPendientes = async () => {
+        if (loadingPendientes) return;
+        setLoadingPendientes(true);
+        try {
+          const townshipsAbiertosIds = townships
+            .filter(t => calcularEstadoTownship(t).estado === 'abierto')
+            .map(t => t.id);
+          
+          if (townshipsAbiertosIds.length === 0) {
+            setPendientesAbiertos([]);
+            setLoadingPendientes(false);
+            return;
+          }
+
+          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
+          const propiedades = await res.json();
+          
+          const anioActual = new Date().getFullYear();
+          
+          const pendientes = propiedades.filter(p => {
+            if (!p.facturas || p.facturas.length === 0) return true;
+            const tieneFacturaAnioActual = p.facturas.some(f => {
+              const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
+              return anioFactura === anioActual;
+            });
+            return !tieneFacturaAnioActual;
+          });
+
+          const agrupadosPorTownship = {};
+          pendientes.forEach(p => {
+            const twp = townships.find(t => t.id === p.township_id);
+            const twpNombre = twp?.nombre || 'Sin Township';
+            if (!agrupadosPorTownship[twpNombre]) {
+              agrupadosPorTownship[twpNombre] = { township: twp, propiedades: [] };
+            }
+            agrupadosPorTownship[twpNombre].propiedades.push(p);
+          });
+
+          setPendientesAbiertos(Object.values(agrupadosPorTownship));
+        } catch (e) {
+          console.error('Error loading pendientes:', e);
+          setPendientesAbiertos([]);
+        }
+        setLoadingPendientes(false);
+      };
+      loadPendientes();
+    }
+  }, [token, townships]);
 
   // Search with debounce - reset to page 0 when searching
   useEffect(() => {
@@ -1106,7 +1178,7 @@ export default function PTRSSystem() {
         <StatCard 
           icon="alert" 
           label="Pendientes Aplicar" 
-          value={clientesPendientesAplicar} 
+          value={pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0)} 
           color="yellow" 
           onClick={() => setVistaActual('pendientes')}
         />
@@ -1633,7 +1705,7 @@ export default function PTRSSystem() {
       {!townshipSeleccionado ? (
         <div className="grid gap-4">
           {townshipsOrdenados.map((t, idx) => {
-            const propiedadesTwp = getPropiedadesPorTownship(t.id);
+            const propiedadesTwp = conteosPorTownship[t.id] || 0;
             const { estado, tipo, fechaCierre, diasRestantes, fechaApertura, diasParaAbrir } = t.estadoCalculado;
             
             return (
