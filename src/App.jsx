@@ -120,7 +120,7 @@ export default function PTRSSystem() {
   const [apelaciones, setApelaciones] = useState([]);
   const [paginaActual, setPaginaActual] = useState(0);
   const [propiedadSeleccionada, setPropiedadSeleccionada] = useState(null);
-  const [propiedadTab, setPropiedadTab] = useState('facturas');
+  const [propiedadTab, setPropiedadTab] = useState('documentos');
   const [propiedadFacturas, setPropiedadFacturas] = useState([]);
   const [propiedadDocumentos, setPropiedadDocumentos] = useState([]);
   const [propiedadNotas, setPropiedadNotas] = useState([]);
@@ -1462,13 +1462,13 @@ export default function PTRSSystem() {
                       <div className="flex justify-between items-start">
                         <div 
                           className="cursor-pointer hover:opacity-80"
-                          onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('facturas'); setModalActivo('expedientePropiedad'); }}
+                          onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('documentos'); setModalActivo('expedientePropiedad'); }}
                         >
                           <p className="font-mono text-lg font-semibold text-blue-600 hover:underline">{p.pin}</p>
                         </div>
                         <div className="flex space-x-2">
                           <button 
-                            onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('facturas'); setModalActivo('expedientePropiedad'); }}
+                            onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('documentos'); setModalActivo('expedientePropiedad'); }}
                             className="text-xs text-blue-600 hover:text-blue-800 border border-blue-300 px-2 py-1 rounded"
                           >
                             📁 Expediente
@@ -2330,45 +2330,78 @@ export default function PTRSSystem() {
     const [form, setForm] = useState({
       cliente_id: clienteSeleccionado?.id || '',
       nombre: '',
-      tipo: 'otro',
+      tipo: 'factura',
       notas: '',
       archivo_url: ''
     });
+    const [archivo, setArchivo] = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setUploading(true);
+      try {
+        let archivoUrl = form.archivo_url;
+        if (archivo) {
+          // Subir a carpeta del cliente
+          const clienteFolder = `cliente_${clienteSeleccionado?.id}`;
+          archivoUrl = await uploadFile(archivo, clienteFolder, token);
+        }
+        await saveDocumento({...form, archivo_url: archivoUrl});
+      } catch (err) {
+        notify('Error al subir archivo', 'error');
+      }
+      setUploading(false);
+    };
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
           <div className="p-6 border-b flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900">Nuevo Documento</h3>
+            <h3 className="font-semibold text-gray-900">Subir Documento / Factura</h3>
             <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); saveDocumento(form); }}>
+          <form onSubmit={handleSubmit}>
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del documento *</label>
-                <input className="w-full border rounded-lg px-3 py-2" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} required />
+                <input className="w-full border rounded-lg px-3 py-2" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} required placeholder="Ej: Factura 2024, Contrato, etc." />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
                 <select className="w-full border rounded-lg px-3 py-2" value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})}>
-                  <option value="identificacion">Identificación</option>
-                  <option value="titulo">Título de propiedad</option>
-                  <option value="factura_impuestos">Factura de impuestos</option>
-                  <option value="autorizacion">Autorización</option>
-                  <option value="otro">Otro</option>
+                  <option value="factura">📄 Factura</option>
+                  <option value="contrato">📋 Contrato</option>
+                  <option value="identificacion">🪪 Identificación</option>
+                  <option value="autorizacion">✍️ Autorización</option>
+                  <option value="correspondencia">✉️ Correspondencia</option>
+                  <option value="otro">📎 Otro</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL del archivo (opcional)</label>
-                <input className="w-full border rounded-lg px-3 py-2" value={form.archivo_url} onChange={(e) => setForm({...form, archivo_url: e.target.value})} placeholder="https://..." />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subir archivo (PDF, imagen)</label>
+                <input 
+                  type="file" 
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  onChange={(e) => setArchivo(e.target.files[0])}
+                />
+                <p className="text-xs text-gray-500 mt-1">O pega un link de Google Drive abajo</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Link externo (opcional)</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.archivo_url} onChange={(e) => setForm({...form, archivo_url: e.target.value})} placeholder="https://drive.google.com/..." />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} placeholder="Detalles adicionales..." />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end space-x-2">
               <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+              <button type="submit" disabled={saving || uploading} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">
+                {uploading ? '⏳ Subiendo...' : saving ? 'Guardando...' : '📤 Subir'}
+              </button>
             </div>
           </form>
         </div>
@@ -2525,9 +2558,8 @@ export default function PTRSSystem() {
     if (!propiedadSeleccionada) return null;
     const twp = townships.find(t => t.id === propiedadSeleccionada.township_id);
     const propTabs = [
-      { id: 'facturas', label: `Facturas (${propiedadFacturas.length})` },
-      { id: 'apelaciones', label: `Apelaciones (${propiedadApelaciones.length})` },
       { id: 'documentos', label: `Documentos (${propiedadDocumentos.length})` },
+      { id: 'apelaciones', label: `Apelaciones (${propiedadApelaciones.length})` },
       { id: 'notas', label: `Notas (${propiedadNotas.length})` },
     ];
     
@@ -2572,39 +2604,6 @@ export default function PTRSSystem() {
           
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            {/* Facturas Tab */}
-            {propiedadTab === 'facturas' && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold text-gray-900">Historial de Facturas</h3>
-                  <button onClick={() => setModalActivo('nuevaFacturaPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Factura</button>
-                </div>
-                {propiedadFacturas.length > 0 ? propiedadFacturas.map((f, i) => (
-                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3 border-l-4 border-green-400">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
-                            {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
-                          </span>
-                          <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
-                          {f.archivo_url && <a href={f.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">📄 Ver PDF</a>}
-                        </div>
-                        <div className="flex space-x-3 text-xs text-gray-500 mt-2">
-                          {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
-                        </div>
-                        {f.concepto && <p className="text-sm text-gray-600 mt-2">{f.concepto}</p>}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
-                      </div>
-                    </div>
-                  </div>
-                )) : <p className="text-gray-500 text-center py-8">No hay facturas registradas para esta propiedad</p>}
-              </div>
-            )}
-            
             {/* Apelaciones Tab */}
             {propiedadTab === 'apelaciones' && (
               <div>
