@@ -612,6 +612,72 @@ export default function PTRSSystem() {
     }
   };
 
+  // Buscar datos del Cook County Assessor
+  const [buscandoDatosCondado, setBuscandoDatosCondado] = useState(false);
+  
+  const buscarDatosCondado = async (propiedad) => {
+    if (!propiedad?.pin) return;
+    setBuscandoDatosCondado(true);
+    try {
+      const pinLimpio = propiedad.pin.replace(/-/g, '');
+      const response = await fetch(`https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`);
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const info = data[0];
+        const direccion = info.property_address || info.addr || '';
+        const townshipNombre = info.township_name || info.township || '';
+        
+        // Buscar township en nuestra base de datos
+        let townshipId = null;
+        if (townshipNombre) {
+          const twpEncontrado = townships.find(t => 
+            t.nombre.toLowerCase().includes(townshipNombre.toLowerCase()) ||
+            townshipNombre.toLowerCase().includes(t.nombre.toLowerCase())
+          );
+          if (twpEncontrado) {
+            townshipId = twpEncontrado.id;
+          }
+        }
+        
+        // Actualizar propiedad
+        const updateData = {};
+        if (direccion) updateData.direccion = direccion;
+        if (townshipId) updateData.township_id = townshipId;
+        
+        if (Object.keys(updateData).length > 0) {
+          await api(`propiedades?id=eq.${propiedad.id}`, {
+            method: 'PATCH',
+            body: updateData,
+            token
+          });
+          
+          // Actualizar en la UI
+          setPropiedadSeleccionada({...propiedad, ...updateData});
+          
+          // Recargar cliente para refrescar propiedades
+          if (clienteSeleccionado) {
+            const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+            const clienteData = await res.json();
+            if (clienteData && clienteData[0]) {
+              setClienteSeleccionado(clienteData[0]);
+            }
+          }
+          
+          notify(`Datos actualizados: ${direccion || 'Sin dirección'}`);
+        } else {
+          notify('No se encontraron datos para este PIN', 'error');
+        }
+      } else {
+        notify('PIN no encontrado en el condado', 'error');
+      }
+    } catch (e) {
+      console.error('Error buscando datos del condado:', e);
+      notify('Error al consultar el condado', 'error');
+    }
+    setBuscandoDatosCondado(false);
+  };
+
   const transferirPropiedad = async (propiedadId, nuevoClienteId) => {
     setSaving(true);
     try {
@@ -2024,8 +2090,14 @@ export default function PTRSSystem() {
                 <p className="text-gray-600 mt-1">{propiedadSeleccionada.direccion || 'Sin dirección'}</p>
                 <div className="flex items-center space-x-3 mt-2 text-sm">
                   {twp && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{twp.nombre}</span>}
-                  {propiedadSeleccionada.customer_number && <span className="text-gray-500">Customer: {propiedadSeleccionada.customer_number}</span>}
-                  {propiedadSeleccionada.work_order_number && <span className="text-gray-500">WO: {propiedadSeleccionada.work_order_number}</span>}
+                  {!twp && <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Sin township</span>}
+                  <button
+                    onClick={() => buscarDatosCondado(propiedadSeleccionada)}
+                    disabled={buscandoDatosCondado}
+                    className="bg-green-100 text-green-700 px-2 py-0.5 rounded hover:bg-green-200 disabled:opacity-50"
+                  >
+                    {buscandoDatosCondado ? '⏳ Buscando...' : '🔍 Buscar datos del condado'}
+                  </button>
                 </div>
               </div>
               <button onClick={() => { setModalActivo(null); setPropiedadSeleccionada(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
