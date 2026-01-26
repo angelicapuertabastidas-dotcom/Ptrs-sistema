@@ -9,12 +9,13 @@ var api = async function(endpoint, options) {
   var method = options.method || 'GET';
   var body = options.body;
   var token = options.token;
-  var headers = {
+  var customHeaders = options.headers || {};
+  var headers = Object.assign({
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
     'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
-  };
+  }, customHeaders);
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
   var res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, config);
@@ -311,18 +312,29 @@ export default function PTRSSystem() {
   // Load property counts per township after townships load
   useEffect(() => {
     if (token && townships.length > 0) {
-      // Load property counts per township
+      // Load property counts per township using direct count
       const loadConteos = async () => {
         try {
-          const res = await api('propiedades?select=township_id', { token });
-          const props = await res.json();
+          // Get counts for each township directly
           const conteos = {};
+          
+          // First try to get all properties (with higher limit)
+          const res = await api('propiedades?select=township_id', { 
+            token,
+            headers: { 'Range': '0-99999' }  // Request up to 100k records
+          });
+          
+          const props = await res.json();
+          console.log('Total propiedades cargadas para conteo:', props.length);
+          
           props.forEach(p => {
             if (p.township_id) {
               conteos[p.township_id] = (conteos[p.township_id] || 0) + 1;
             }
           });
+          
           setConteosPorTownship(conteos);
+          console.log('Conteos por township:', conteos);
         } catch (e) {
           console.error('Error loading conteos:', e);
         }
@@ -344,8 +356,12 @@ export default function PTRSSystem() {
             return;
           }
 
-          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
+          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { 
+            token,
+            headers: { 'Range': '0-99999' }  // Get all properties in open townships
+          });
           const propiedades = await res.json();
+          console.log('Propiedades en townships abiertos:', propiedades.length);
           
           const anioActual = new Date().getFullYear();
           
@@ -1622,8 +1638,12 @@ export default function PTRSSystem() {
     setLoadingTownship(true);
     setTownshipSeleccionado(township);
     try {
-      const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)`, { token });
+      const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)`, { 
+        token,
+        headers: { 'Range': '0-9999' }  // Get up to 10k properties per township
+      });
       const propiedades = await res.json();
+      console.log(`Propiedades en ${township.nombre}:`, propiedades.length);
       
       const clientesMap = new Map();
       propiedades.forEach(p => {
