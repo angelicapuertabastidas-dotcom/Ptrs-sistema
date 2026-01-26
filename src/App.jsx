@@ -9,13 +9,12 @@ var api = async function(endpoint, options) {
   var method = options.method || 'GET';
   var body = options.body;
   var token = options.token;
-  var customHeaders = options.headers || {};
-  var headers = Object.assign({
+  var headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
     'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
-  }, customHeaders);
+  };
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
   var res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, config);
@@ -315,14 +314,10 @@ export default function PTRSSystem() {
       // Load property counts per township using direct count
       const loadConteos = async () => {
         try {
-          // Get counts for each township directly
+          // Get counts for each township directly - use limit in URL
           const conteos = {};
           
-          // First try to get all properties (with higher limit)
-          const res = await api('propiedades?select=township_id', { 
-            token,
-            headers: { 'Range': '0-99999' }  // Request up to 100k records
-          });
+          const res = await api('propiedades?select=township_id&limit=100000', { token });
           
           const props = await res.json();
           console.log('Total propiedades cargadas para conteo:', props.length);
@@ -356,10 +351,7 @@ export default function PTRSSystem() {
             return;
           }
 
-          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { 
-            token,
-            headers: { 'Range': '0-99999' }  // Get all properties in open townships
-          });
+          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)&limit=100000`, { token });
           const propiedades = await res.json();
           console.log('Propiedades en townships abiertos:', propiedades.length);
           
@@ -1638,10 +1630,7 @@ export default function PTRSSystem() {
     setLoadingTownship(true);
     setTownshipSeleccionado(township);
     try {
-      const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)`, { 
-        token,
-        headers: { 'Range': '0-9999' }  // Get up to 10k properties per township
-      });
+      const res = await api(`propiedades?township_id=eq.${township.id}&select=*,cliente:clientes(*)&limit=10000`, { token });
       const propiedades = await res.json();
       console.log(`Propiedades en ${township.nombre}:`, propiedades.length);
       
