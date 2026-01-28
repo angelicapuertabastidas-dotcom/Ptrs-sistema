@@ -135,6 +135,8 @@ export default function PTRSSystem() {
   const [loadingPendientes, setLoadingPendientes] = useState(false);
   const [pendientesTab, setPendientesTab] = useState('townships');
   const [conteosPorTownship, setConteosPorTownship] = useState({});
+  const [contactosCliente, setContactosCliente] = useState([]);
+  const [contactoEditando, setContactoEditando] = useState(null);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -425,14 +427,16 @@ export default function PTRSSystem() {
     if (clienteSeleccionado?.id && token) {
       const loadClienteDetalle = async () => {
         try {
-          const [notasRes, docsRes, apelRes] = await Promise.all([
+          const [notasRes, docsRes, apelRes, contactosRes] = await Promise.all([
             api(`notas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
             api(`documentos?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
-            api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
+            api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
+            api(`contactos_cliente?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
           ]);
           setNotas(await notasRes.json() || []);
           setDocumentos(await docsRes.json() || []);
           setApelaciones(await apelRes.json() || []);
+          setContactosCliente(await contactosRes.json() || []);
           
           // Cargar facturas CON sus propiedades desde factura_propiedades
           const facturasRes = await api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
@@ -937,15 +941,58 @@ export default function PTRSSystem() {
         token
       });
       
-      // Create automatic note with merged client's data
-      var notaContenido = `📋 CLIENTE FUSIONADO:\n`;
-      notaContenido += `Nombre: ${clienteOrigen.nombre || ''} ${clienteOrigen.apellido || ''}\n`;
-      if (clienteOrigen.customer_number) notaContenido += `Customer #: ${clienteOrigen.customer_number}\n`;
-      if (clienteOrigen.work_order_number) notaContenido += `Work Order #: ${clienteOrigen.work_order_number}\n`;
-      if (clienteOrigen.telefono_principal) notaContenido += `Teléfono: ${clienteOrigen.telefono_principal}\n`;
-      if (clienteOrigen.email) notaContenido += `Email: ${clienteOrigen.email}\n`;
-      if (clienteOrigen.direccion_correspondencia) notaContenido += `Dirección: ${clienteOrigen.direccion_correspondencia}\n`;
-      notaContenido += `Propiedades transferidas: ${clienteOrigen.propiedades?.length || 0}`;
+      // Move existing contactos from origen to destino
+      await api(`contactos_cliente?cliente_id=eq.${clienteOrigen.id}`, {
+        method: 'PATCH',
+        body: { cliente_id: clienteDestino.id },
+        token
+      });
+      
+      // *** NUEVO: Crear contacto alternativo con datos del cliente fusionado ***
+      var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
+      nombreCompleto = nombreCompleto.trim();
+      
+      // Determinar tipo de relación basado en el nombre
+      var relacion = 'otro';
+      var nombreUpper = nombreCompleto.toUpperCase();
+      if (nombreUpper.includes('LLC') || nombreUpper.includes('INC') || nombreUpper.includes('CORP') || nombreUpper.includes('PARK') || nombreUpper.includes('INDUSTRIAL')) {
+        relacion = 'corporacion';
+      }
+      
+      // Crear nota con info adicional
+      var notasContacto = [];
+      if (clienteOrigen.customer_number) notasContacto.push('Customer #: ' + clienteOrigen.customer_number);
+      if (clienteOrigen.work_order_number) notasContacto.push('Work Order #: ' + clienteOrigen.work_order_number);
+      if (clienteOrigen.direccion_correspondencia) notasContacto.push('Dirección: ' + clienteOrigen.direccion_correspondencia);
+      notasContacto.push('Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0));
+      notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString());
+      
+      await api('contactos_cliente', {
+        method: 'POST',
+        body: {
+          cliente_id: clienteDestino.id,
+          nombre: nombreCompleto,
+          relacion: relacion,
+          telefono: clienteOrigen.telefono_principal || null,
+          email: clienteOrigen.email || null,
+          es_contacto_principal: false,
+          notas: notasContacto.join(' | '),
+          origen_fusion: true,
+          cliente_original_nombre: nombreCompleto,
+          cliente_original_id: clienteOrigen.id
+        },
+        token
+      });
+      
+      // Create automatic note with merged client's data (mantener para historial)
+      var notaContenido = '📋 CLIENTE FUSIONADO:\n';
+      notaContenido += 'Nombre: ' + nombreCompleto + '\n';
+      if (clienteOrigen.customer_number) notaContenido += 'Customer #: ' + clienteOrigen.customer_number + '\n';
+      if (clienteOrigen.work_order_number) notaContenido += 'Work Order #: ' + clienteOrigen.work_order_number + '\n';
+      if (clienteOrigen.telefono_principal) notaContenido += 'Teléfono: ' + clienteOrigen.telefono_principal + '\n';
+      if (clienteOrigen.email) notaContenido += 'Email: ' + clienteOrigen.email + '\n';
+      if (clienteOrigen.direccion_correspondencia) notaContenido += 'Dirección: ' + clienteOrigen.direccion_correspondencia + '\n';
+      notaContenido += 'Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0);
       
       await api('notas', {
         method: 'POST',
@@ -967,7 +1014,7 @@ export default function PTRSSystem() {
             work_order_number: clienteOrigen.work_order_number || '',
             numero: 'FUSION-' + new Date().getTime().toString().slice(-6),
             monto: 0,
-            concepto: `Registro de fusión: ${clienteOrigen.nombre || ''} ${clienteOrigen.apellido || ''}`,
+            concepto: 'Registro de fusión: ' + nombreCompleto,
             fecha_emision: new Date().toISOString().split('T')[0],
             estado: 'pendiente'
           },
@@ -1523,6 +1570,7 @@ export default function PTRSSystem() {
     
     const tabs = [
       { id: 'info', label: 'Información' },
+      { id: 'contactos', label: `Contactos (${contactosCliente.length})` },
       { id: 'propiedades', label: `Propiedades (${cliente.propiedades?.length || 0})` },
       { id: 'documentos', label: `Documentos (${documentos.length})` },
       { id: 'notas', label: `Notas (${notas.length})` },
@@ -1597,6 +1645,81 @@ export default function PTRSSystem() {
                     <p><span className="text-gray-500">Work Order #:</span> <span className="font-medium">{cliente.work_order_number || 'N/A'}</span></p>
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {/* Contactos Tab */}
+            {expedienteTab === 'contactos' && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900">Contactos Alternativos</h3>
+                  <button onClick={() => { setContactoEditando(null); setModalActivo('nuevoContacto'); }} className="text-blue-600 text-sm hover:underline">+ Agregar Contacto</button>
+                </div>
+                <p className="text-sm text-gray-500 mb-4">
+                  Personas relacionadas, números alternativos, corporaciones o nombres bajo los cuales se han creado facturas.
+                </p>
+                {contactosCliente.length > 0 ? contactosCliente.map((c, i) => (
+                  <div key={i} className={`p-4 rounded-lg mb-3 border-l-4 ${c.origen_fusion ? 'bg-purple-50 border-purple-400' : 'bg-blue-50 border-blue-400'}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-gray-900">{c.nombre || 'Sin nombre'}</span>
+                          {c.relacion && (
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              c.relacion === 'corporacion' ? 'bg-purple-100 text-purple-700' :
+                              c.relacion === 'esposo/a' ? 'bg-pink-100 text-pink-700' :
+                              c.relacion === 'hijo/a' ? 'bg-green-100 text-green-700' :
+                              c.relacion === 'manager' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {c.relacion}
+                            </span>
+                          )}
+                          {c.es_contacto_principal && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 text-yellow-700">⭐ Principal</span>
+                          )}
+                          {c.origen_fusion && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700">🔀 Fusionado</span>
+                          )}
+                        </div>
+                        <div className="mt-2 space-y-1 text-sm text-gray-600">
+                          {c.telefono && <div className="flex items-center space-x-2"><Icon name="phone" /><span>{c.telefono}</span></div>}
+                          {c.email && <div className="flex items-center space-x-2"><Icon name="mail" /><span>{c.email}</span></div>}
+                          {c.notas && <p className="text-gray-500 italic mt-2">{c.notas}</p>}
+                          {c.cliente_original_nombre && (
+                            <p className="text-xs text-purple-600 mt-1">Origen: {c.cliente_original_nombre}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => { setContactoEditando(c); setModalActivo('nuevoContacto'); }}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          Editar
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            if (window.confirm('¿Eliminar este contacto?')) {
+                              await api(`contactos_cliente?id=eq.${c.id}`, { method: 'DELETE', token });
+                              const res = await api(`contactos_cliente?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
+                              setContactosCliente(await res.json() || []);
+                              notify('Contacto eliminado');
+                            }
+                          }}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>Sin contactos alternativos</p>
+                    <p className="text-sm mt-2">Agrega números de teléfono, emails o nombres adicionales asociados a este cliente.</p>
+                  </div>
+                )}
               </div>
             )}
             
@@ -3474,6 +3597,162 @@ export default function PTRSSystem() {
     );
   };
 
+  // Modal Nuevo/Editar Contacto
+  const ModalNuevoContacto = () => {
+    const [formData, setFormData] = useState({
+      nombre: contactoEditando?.nombre || '',
+      relacion: contactoEditando?.relacion || '',
+      telefono: contactoEditando?.telefono || '',
+      email: contactoEditando?.email || '',
+      es_contacto_principal: contactoEditando?.es_contacto_principal || false,
+      notas: contactoEditando?.notas || ''
+    });
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setSaving(true);
+      try {
+        if (contactoEditando?.id) {
+          // Editar existente
+          await api(`contactos_cliente?id=eq.${contactoEditando.id}`, {
+            method: 'PATCH',
+            body: formData,
+            token
+          });
+          notify('Contacto actualizado');
+        } else {
+          // Crear nuevo
+          await api('contactos_cliente', {
+            method: 'POST',
+            body: {
+              ...formData,
+              cliente_id: clienteSeleccionado.id
+            },
+            token
+          });
+          notify('Contacto agregado');
+        }
+        
+        // Recargar contactos
+        const res = await api(`contactos_cliente?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
+        setContactosCliente(await res.json() || []);
+        setModalActivo(null);
+        setContactoEditando(null);
+      } catch (e) {
+        notify('Error al guardar contacto', 'error');
+      }
+      setSaving(false);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+          <div className="p-6 border-b">
+            <h2 className="text-xl font-bold">{contactoEditando ? 'Editar Contacto' : 'Nuevo Contacto'}</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Agregar persona relacionada, número alternativo o corporación asociada.
+            </p>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+              <input
+                type="text"
+                value={formData.nombre}
+                onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2"
+                placeholder="Nombre completo, LLC, corporación..."
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Relación</label>
+              <select
+                value={formData.relacion}
+                onChange={(e) => setFormData({...formData, relacion: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2"
+              >
+                <option value="">-- Seleccionar --</option>
+                <option value="esposo/a">Esposo/a</option>
+                <option value="hijo/a">Hijo/a</option>
+                <option value="familiar">Otro familiar</option>
+                <option value="manager">Manager / Encargado</option>
+                <option value="corporacion">Corporación / LLC</option>
+                <option value="inquilino">Inquilino</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                <input
+                  type="text"
+                  value={formData.telefono}
+                  onChange={(e) => setFormData({...formData, telefono: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="(123) 456-7890"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="email@ejemplo.com"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+              <textarea
+                value={formData.notas}
+                onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2"
+                rows="2"
+                placeholder="Información adicional, bajo qué nombre se factura, etc."
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="es_principal"
+                checked={formData.es_contacto_principal}
+                onChange={(e) => setFormData({...formData, es_contacto_principal: e.target.checked})}
+                className="rounded"
+              />
+              <label htmlFor="es_principal" className="text-sm text-gray-700">
+                Es contacto principal (para llamadas/emails)
+              </label>
+            </div>
+            
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button 
+                type="button" 
+                onClick={() => { setModalActivo(null); setContactoEditando(null); }} 
+                className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="submit" 
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving ? 'Guardando...' : (contactoEditando ? 'Guardar Cambios' : 'Agregar Contacto')}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   // ========== REPORTE CLIENTES PENDIENTES POR TRIENIO ==========
   const ReportePendientesTrienio = () => {
     const [pendientesData, setPendientesData] = useState([]);
@@ -3553,9 +3832,9 @@ export default function PTRSSystem() {
 
     const getColorRegion = (region) => {
       switch(region) {
-        case 'South-West': return 'bg-orange-50 border-l-4 border-orange-500';
-        case 'Chicago': return 'bg-blue-50 border-l-4 border-blue-500';
-        case 'North': return 'bg-green-50 border-l-4 border-green-500';
+        case 'south_west': return 'bg-orange-50 border-l-4 border-orange-500';
+        case 'chicago': return 'bg-blue-50 border-l-4 border-blue-500';
+        case 'north': return 'bg-green-50 border-l-4 border-green-500';
         default: return 'bg-gray-50 border-l-4 border-gray-500';
       }
     };
@@ -3933,6 +4212,7 @@ export default function PTRSSystem() {
       {modalActivo === 'nuevaApelacionPropiedad' && <ModalNuevaApelacionPropiedad />}
       {modalActivo === 'nuevoUsuario' && <ModalNuevoUsuario />}
       {modalActivo === 'editarPlantilla' && <ModalEditarPlantilla />}
+      {modalActivo === 'nuevoContacto' && <ModalNuevoContacto />}
       
       {/* Toast */}
       {toast && (
