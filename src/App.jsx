@@ -300,7 +300,7 @@ export default function PTRSSystem() {
     }
   }, [token]);
 
-  // Load townships abiertos para alertas (usando campos booleanos de la base de datos)
+  // Cargar townships abiertos para alertas
   const loadTownshipsAbiertos = useCallback(async () => {
     if (!token) return;
     try {
@@ -1160,26 +1160,33 @@ export default function PTRSSystem() {
   // Contar pendientes por aplicar (clientes sin propiedades)
   const clientesPendientesAplicar = clientes.filter(c => !c.propiedades || c.propiedades.length === 0).length;
 
-  // Componente de Alerta de Townships Abiertos (usando campos booleanos de Supabase)
+  // Función para calcular próxima revaluación
+  const calcularProximaRevaluacion = (ciclo) => {
+    if (!ciclo) return null;
+    const anioActual = new Date().getFullYear();
+    let proxima = ciclo;
+    while (proxima <= anioActual) {
+      proxima += 3;
+    }
+    return proxima;
+  };
+
+  // Componente de Alerta de Townships Abiertos
   const TownshipsAbiertosAlert = () => {
     const { assessor, bor } = townshipsAbiertos;
     
-    if (assessor.length === 0 && bor.length === 0) {
-      return null;
-    }
+    if (assessor.length === 0 && bor.length === 0) return null;
     
     const formatDate = (dateStr) => {
       if (!dateStr) return 'N/A';
-      const date = new Date(dateStr + 'T00:00:00');
-      return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+      return new Date(dateStr + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
     };
     
     const getDaysRemaining = (dateStr) => {
       if (!dateStr) return null;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const closeDate = new Date(dateStr + 'T00:00:00');
-      return Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
+      return Math.ceil((new Date(dateStr + 'T00:00:00') - today) / (1000 * 60 * 60 * 24));
     };
 
     return (
@@ -1207,8 +1214,7 @@ export default function PTRSSystem() {
                   <div key={t.id} className={`flex items-center justify-between rounded-lg px-4 py-2 border-l-4 ${urgencyClass}`}>
                     <span className="font-semibold">{t.nombre}</span>
                     <span className={`text-sm ${textClass}`}>
-                      Cierra: {formatDate(t.fecha_fin_assessor)}
-                      {days !== null && days <= 14 && ` (${days} día${days !== 1 ? 's' : ''})`}
+                      Cierra: {formatDate(t.fecha_fin_assessor)} {days !== null && days <= 14 && `(${days} día${days !== 1 ? 's' : ''})`}
                     </span>
                   </div>
                 );
@@ -1232,8 +1238,7 @@ export default function PTRSSystem() {
                   <div key={t.id} className={`flex items-center justify-between rounded-lg px-4 py-2 border-l-4 ${urgencyClass}`}>
                     <span className="font-semibold">{t.nombre}</span>
                     <span className={`text-sm ${textClass}`}>
-                      Cierra: {formatDate(t.fecha_fin_bor)}
-                      {days !== null && days <= 14 && ` (${days} día${days !== 1 ? 's' : ''})`}
+                      Cierra: {formatDate(t.fecha_fin_bor)} {days !== null && days <= 14 && `(${days} día${days !== 1 ? 's' : ''})`}
                     </span>
                   </div>
                 );
@@ -1253,7 +1258,7 @@ export default function PTRSSystem() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
       
-      {/* Alerta de Townships Abiertos (usando booleanos de base de datos) */}
+      {/* Alerta de Townships Abiertos */}
       <TownshipsAbiertosAlert />
       
       {/* Township Alerts */}
@@ -1720,8 +1725,13 @@ export default function PTRSSystem() {
                             {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
                           </span>
                           <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
+                          {f.anios_apelacion && (
+                            <span className="bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded">
+                              📅 {f.anios_apelacion}
+                            </span>
+                          )}
                         </div>
-                        <div className="flex space-x-3 text-xs text-gray-500 mt-2">
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-2">
                           {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
                           {f.work_order_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Work Order: {f.work_order_number}</span>}
                         </div>
@@ -2635,9 +2645,9 @@ export default function PTRSSystem() {
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Años de Apelación</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
-                <p className="text-xs text-gray-500 mt-1">Años fiscales cubiertos por esta factura</p>
+                <p className="text-xs text-gray-500 mt-1">Años fiscales que cubre esta factura</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2741,6 +2751,7 @@ export default function PTRSSystem() {
   const ModalExpedientePropiedad = () => {
     if (!propiedadSeleccionada) return null;
     const twp = townships.find(t => t.id === propiedadSeleccionada.township_id);
+    const proximaRevaluacion = twp?.ciclo_revaluacion ? calcularProximaRevaluacion(twp.ciclo_revaluacion) : null;
     const propTabs = [
       { id: 'documentos', label: `Documentos (${propiedadDocumentos.length})` },
       { id: 'apelaciones', label: `Apelaciones (${propiedadApelaciones.length})` },
@@ -2757,9 +2768,19 @@ export default function PTRSSystem() {
                 <p className="text-sm text-gray-500 mb-1">Expediente de Propiedad</p>
                 <h2 className="font-mono text-2xl font-bold text-blue-600">{propiedadSeleccionada.pin}</h2>
                 <p className="text-gray-600 mt-1">{propiedadSeleccionada.direccion || 'Sin dirección'}</p>
-                <div className="flex items-center space-x-3 mt-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                   {twp && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{twp.nombre}</span>}
                   {!twp && <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Sin township</span>}
+                  {proximaRevaluacion && (
+                    <span className={`px-2 py-0.5 rounded ${proximaRevaluacion === new Date().getFullYear() ? 'bg-red-100 text-red-700 font-bold' : 'bg-purple-100 text-purple-700'}`}>
+                      🔄 Revalúa: {proximaRevaluacion}
+                    </span>
+                  )}
+                  {twp?.region && (
+                    <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">
+                      {twp.region === 'north' ? '🌐 North' : twp.region === 'south_west' ? '🌐 South-West' : twp.region === 'chicago' ? '🌐 Chicago' : twp.region}
+                    </span>
+                  )}
                   <button
                     onClick={() => buscarDatosCondado(propiedadSeleccionada)}
                     disabled={buscandoDatosCondado}
@@ -2796,16 +2817,28 @@ export default function PTRSSystem() {
                   <button onClick={() => setModalActivo('nuevaApelacionPropiedad')} className="text-blue-600 text-sm hover:underline">+ Agregar Apelación</button>
                 </div>
                 {propiedadApelaciones.length > 0 ? propiedadApelaciones.map((a, i) => (
-                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
+                  <div key={i} className={`p-4 rounded-lg mb-3 border-l-4 ${a.estado === 'aprobada' ? 'bg-green-50 border-green-500' : a.estado === 'rechazada' ? 'bg-red-50 border-red-500' : 'bg-gray-50 border-gray-300'}`}>
                     <div className="flex justify-between mb-2">
                       <div className="flex items-center space-x-3">
-                        <span className="font-semibold text-lg">{a.anio}</span>
-                        {a.archivo_url && <a href={a.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">📄 Ver Documento</a>}
+                        <span className="font-bold text-xl">{a.anio}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado?.toUpperCase()}</span>
+                        {a.archivo_url && <a href={a.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">📄 Ver Carta</a>}
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-xs ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado}</span>
                     </div>
-                    {a.ahorro && <p className="text-green-600 font-medium">Ahorro: ${Number(a.ahorro).toLocaleString()}</p>}
-                    {a.notas && <p className="text-sm text-gray-600 mt-2">{a.notas}</p>}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {a.anios_otorgados && (
+                        <span className={`text-xs px-2 py-1 rounded ${a.anios_otorgados < 3 ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                          📅 {a.anios_otorgados} {a.anios_otorgados === 1 ? 'año' : 'años'} otorgado{a.anios_otorgados !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {a.motivo_reduccion && a.motivo_reduccion !== 'normal' && (
+                        <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700">
+                          {a.motivo_reduccion === 'vacante' ? '🏚️ Vacante' : a.motivo_reduccion === 'remodelacion' ? '🔨 Remodelación' : a.motivo_reduccion === 'venta' ? '🏷️ En Venta' : a.motivo_reduccion}
+                        </span>
+                      )}
+                      {a.ahorro && <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium">💰 Ahorro: ${Number(a.ahorro).toLocaleString()}</span>}
+                    </div>
+                    {a.notas && <p className="text-sm text-gray-600 mt-3 pt-2 border-t">{a.notas}</p>}
                   </div>
                 )) : <p className="text-gray-500 text-center py-8">No hay apelaciones registradas para esta propiedad</p>}
               </div>
@@ -2924,9 +2957,9 @@ export default function PTRSSystem() {
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Años de Apelación</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
-                <p className="text-xs text-gray-500 mt-1">Años fiscales cubiertos por esta factura</p>
+                <p className="text-xs text-gray-500 mt-1">Años fiscales que cubre esta factura</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
@@ -3045,7 +3078,15 @@ export default function PTRSSystem() {
 
   // Modal Nueva Apelacion Propiedad
   const ModalNuevaApelacionPropiedad = () => {
-    const [form, setForm] = useState({ anio: new Date().getFullYear(), estado: 'pendiente', ahorro: '', notas: '', archivo_url: '' });
+    const [form, setForm] = useState({ 
+      anio: new Date().getFullYear(), 
+      estado: 'pendiente', 
+      ahorro: '', 
+      notas: '', 
+      archivo_url: '',
+      anios_otorgados: '3',
+      motivo_reduccion: 'normal'
+    });
     const [archivo, setArchivo] = useState(null);
     const [uploading, setUploading] = useState(false);
 
@@ -3057,7 +3098,7 @@ export default function PTRSSystem() {
         if (archivo) {
           archivoUrl = await uploadFile(archivo, 'apelaciones/' + propiedadSeleccionada?.pin?.replace(/-/g, ''), token);
         }
-        await saveApelacionPropiedad({...form, archivo_url: archivoUrl, ahorro: parseFloat(form.ahorro) || 0});
+        await saveApelacionPropiedad({...form, archivo_url: archivoUrl, ahorro: parseFloat(form.ahorro) || 0, anios_otorgados: parseInt(form.anios_otorgados) || 3});
       } catch (err) {
         notify('Error al subir archivo', 'error');
       }
@@ -3088,6 +3129,27 @@ export default function PTRSSystem() {
                     <option value="enviada">Enviada</option>
                     <option value="aprobada">Aprobada</option>
                     <option value="rechazada">Rechazada</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Años Otorgados</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.anios_otorgados} onChange={(e) => setForm({...form, anios_otorgados: e.target.value})}>
+                    <option value="1">1 año</option>
+                    <option value="2">2 años</option>
+                    <option value="3">3 años (normal)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Años que otorgó el condado</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Motivo</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.motivo_reduccion} onChange={(e) => setForm({...form, motivo_reduccion: e.target.value})}>
+                    <option value="normal">Normal</option>
+                    <option value="vacante">Vacante</option>
+                    <option value="remodelacion">Remodelación</option>
+                    <option value="venta">En Venta</option>
+                    <option value="otro">Otro</option>
                   </select>
                 </div>
               </div>
