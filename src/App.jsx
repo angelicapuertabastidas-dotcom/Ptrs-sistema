@@ -101,6 +101,7 @@ export default function PTRSSystem() {
   const [loading, setLoading] = useState(false);
   const [clientes, setClientes] = useState([]);
   const [townships, setTownships] = useState([]);
+  const [townshipsAbiertos, setTownshipsAbiertos] = useState({ assessor: [], bor: [] });
   const [plantillas, setPlantillas] = useState([
     { id: 1, nombre: 'Recordatorio de Aplicación', contenido: 'Hola {nombre}, le recordamos que el periodo de apelación para el township {township} está abierto hasta {fecha}.' },
     { id: 2, nombre: 'Confirmación de Aprobación', contenido: 'Felicidades {nombre}! Su apelación para la propiedad {pin} fue aprobada con una reducción de ${ahorro}.' },
@@ -299,14 +300,32 @@ export default function PTRSSystem() {
     }
   }, [token]);
 
+  // Load townships abiertos para alertas (usando campos booleanos de la base de datos)
+  const loadTownshipsAbiertos = useCallback(async () => {
+    if (!token) return;
+    try {
+      const assessorRes = await api('townships?assessor_open=eq.true&order=fecha_fin_assessor.asc', { token });
+      const assessorData = await assessorRes.json();
+      const borRes = await api('townships?bor_open=eq.true&order=fecha_fin_bor.asc', { token });
+      const borData = await borRes.json();
+      setTownshipsAbiertos({
+        assessor: Array.isArray(assessorData) ? assessorData : [],
+        bor: Array.isArray(borData) ? borData : []
+      });
+    } catch (e) {
+      console.error('Error loading townships abiertos:', e);
+    }
+  }, [token]);
+
   // Load data when token changes
   useEffect(() => {
     if (token) {
       loadStats();
       loadClientes('', 0);
       loadTownships();
+      loadTownshipsAbiertos();
     }
-  }, [token, loadStats, loadClientes, loadTownships]);
+  }, [token, loadStats, loadClientes, loadTownships, loadTownshipsAbiertos]);
 
   // Load property counts per township after townships load
   useEffect(() => {
@@ -1141,6 +1160,91 @@ export default function PTRSSystem() {
   // Contar pendientes por aplicar (clientes sin propiedades)
   const clientesPendientesAplicar = clientes.filter(c => !c.propiedades || c.propiedades.length === 0).length;
 
+  // Componente de Alerta de Townships Abiertos (usando campos booleanos de Supabase)
+  const TownshipsAbiertosAlert = () => {
+    const { assessor, bor } = townshipsAbiertos;
+    
+    if (assessor.length === 0 && bor.length === 0) {
+      return null;
+    }
+    
+    const formatDate = (dateStr) => {
+      if (!dateStr) return 'N/A';
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+    
+    const getDaysRemaining = (dateStr) => {
+      if (!dateStr) return null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const closeDate = new Date(dateStr + 'T00:00:00');
+      return Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
+    };
+
+    return (
+      <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border-l-4 border-amber-400 rounded-lg shadow-lg p-5 mb-6">
+        <div className="flex items-center mb-4">
+          <span className="text-2xl mr-3">🔔</span>
+          <h3 className="text-xl font-bold text-amber-800">Townships Abiertos para Apelación</h3>
+          <span className="ml-auto text-sm text-amber-600 bg-amber-100 px-2 py-1 rounded">
+            {assessor.length + bor.length} activo{assessor.length + bor.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        
+        {assessor.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <span className="text-xl mr-2">📋</span>
+              <p className="font-bold text-amber-700">ASSESSOR (Fase 1) - {assessor.length} township{assessor.length > 1 ? 's' : ''}</p>
+            </div>
+            <div className="grid gap-2 ml-7">
+              {assessor.map(t => {
+                const days = getDaysRemaining(t.fecha_fin_assessor);
+                const urgencyClass = days <= 7 ? 'bg-red-100 border-red-400' : days <= 14 ? 'bg-orange-100 border-orange-400' : 'bg-green-100 border-green-400';
+                const textClass = days <= 7 ? 'text-red-700 font-bold' : days <= 14 ? 'text-orange-600' : 'text-gray-600';
+                return (
+                  <div key={t.id} className={`flex items-center justify-between rounded-lg px-4 py-2 border-l-4 ${urgencyClass}`}>
+                    <span className="font-semibold">{t.nombre}</span>
+                    <span className={`text-sm ${textClass}`}>
+                      Cierra: {formatDate(t.fecha_fin_assessor)}
+                      {days !== null && days <= 14 && ` (${days} día${days !== 1 ? 's' : ''})`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        
+        {bor.length > 0 && (
+          <div>
+            <div className="flex items-center mb-2">
+              <span className="text-xl mr-2">⚖️</span>
+              <p className="font-bold text-amber-700">BOARD OF REVIEW (Fase 2) - {bor.length} township{bor.length > 1 ? 's' : ''}</p>
+            </div>
+            <div className="grid gap-2 ml-7">
+              {bor.map(t => {
+                const days = getDaysRemaining(t.fecha_fin_bor);
+                const urgencyClass = days <= 7 ? 'bg-red-100 border-red-400' : days <= 14 ? 'bg-orange-100 border-orange-400' : 'bg-green-100 border-green-400';
+                const textClass = days <= 7 ? 'text-red-700 font-bold' : days <= 14 ? 'text-orange-600' : 'text-gray-600';
+                return (
+                  <div key={t.id} className={`flex items-center justify-between rounded-lg px-4 py-2 border-l-4 ${urgencyClass}`}>
+                    <span className="font-semibold">{t.nombre}</span>
+                    <span className={`text-sm ${textClass}`}>
+                      Cierra: {formatDate(t.fecha_fin_bor)}
+                      {days !== null && days <= 14 && ` (${days} día${days !== 1 ? 's' : ''})`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Dashboard View
   const Dashboard = () => {
     const alertasAMostrar = mostrarTodasAlertas ? townshipsConAlertas : townshipsConAlertas.slice(0, 3);
@@ -1148,6 +1252,9 @@ export default function PTRSSystem() {
     return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      
+      {/* Alerta de Townships Abiertos (usando booleanos de base de datos) */}
+      <TownshipsAbiertosAlert />
       
       {/* Township Alerts */}
       {townshipsConAlertas.length > 0 && (
