@@ -406,16 +406,43 @@ export default function PTRSSystem() {
     if (clienteSeleccionado?.id && token) {
       const loadClienteDetalle = async () => {
         try {
-          const [notasRes, docsRes, facturasRes, apelRes] = await Promise.all([
+          const [notasRes, docsRes, apelRes] = await Promise.all([
             api(`notas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
             api(`documentos?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
-            api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token }),
             api(`apelaciones?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token })
           ]);
           setNotas(await notasRes.json() || []);
           setDocumentos(await docsRes.json() || []);
-          setFacturas(await facturasRes.json() || []);
           setApelaciones(await apelRes.json() || []);
+          
+          // Cargar facturas CON sus propiedades desde factura_propiedades
+          const facturasRes = await api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
+          const facturasData = await facturasRes.json() || [];
+          
+          const facturasConPropiedades = await Promise.all(
+            facturasData.map(async (factura) => {
+              try {
+                const fpRes = await api(
+                  `factura_propiedades?factura_id=eq.${factura.id}&select=*,propiedad:propiedades(id,pin,direccion,township_id)&order=row_number.asc`,
+                  { token }
+                );
+                const fpData = await fpRes.json() || [];
+                return {
+                  ...factura,
+                  propiedades_factura: fpData.map(fp => ({
+                    ...fp.propiedad,
+                    row_number: fp.row_number,
+                    application_type: fp.application_type,
+                    appeal_year: fp.appeal_year
+                  }))
+                };
+              } catch (e) {
+                return { ...factura, propiedades_factura: [] };
+              }
+            })
+          );
+          
+          setFacturas(facturasConPropiedades);
         } catch (e) {
           console.error('Error loading client details:', e);
           setNotas([]);
@@ -1591,6 +1618,36 @@ export default function PTRSSystem() {
                           {f.customer_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Customer: {f.customer_number}</span>}
                           {f.work_order_number && <span className="bg-gray-100 px-2 py-0.5 rounded">Work Order: {f.work_order_number}</span>}
                         </div>
+                        
+                        {/* Mostrar propiedades de la factura */}
+                        {f.propiedades_factura && f.propiedades_factura.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 mb-2">
+                              📍 {f.propiedades_factura.length} {f.propiedades_factura.length === 1 ? 'propiedad' : 'propiedades'}:
+                            </p>
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {f.propiedades_factura.map((prop, idx) => (
+                                <div 
+                                  key={idx} 
+                                  className="flex items-center justify-between text-sm bg-white p-2 rounded border cursor-pointer hover:bg-blue-50"
+                                  onClick={() => { 
+                                    setPropiedadSeleccionada(prop); 
+                                    setPropiedadTab('documentos'); 
+                                    setModalActivo('expedientePropiedad'); 
+                                  }}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs text-gray-400 w-5">{prop.row_number || idx + 1}.</span>
+                                    <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
+                                    <span className="text-gray-500 text-xs truncate max-w-[150px]">{prop.direccion || ''}</span>
+                                  </div>
+                                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{prop.application_type || 'TA'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
                         {f.concepto && <p className="text-sm text-gray-600 mt-2">{f.concepto}</p>}
                       </div>
                       <div className="text-right">
