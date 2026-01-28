@@ -1119,6 +1119,7 @@ export default function PTRSSystem() {
         <NavItem icon="dollar" label="Facturas" vista="facturas" />
         <NavItem icon="calendar" label="Corte Semanal" vista="corte" />
         <NavItem icon="file" label="Plantillas" vista="plantillas" />
+        <NavItem icon="users" label="Pendientes Trienio" vista="reportePendientes" />
         <div className="mt-8 pt-4 border-t border-slate-700">
           <NavItem icon="settings" label="Configuración" vista="config" />
         </div>
@@ -3473,6 +3474,414 @@ export default function PTRSSystem() {
     );
   };
 
+  // ========== REPORTE CLIENTES PENDIENTES POR TRIENIO ==========
+  const ReportePendientesTrienio = () => {
+    const [pendientesData, setPendientesData] = useState([]);
+    const [resumenTownship, setResumenTownship] = useState([]);
+    const [resumenRegion, setResumenRegion] = useState([]);
+    const [loadingReporte, setLoadingReporte] = useState(true);
+    const [errorReporte, setErrorReporte] = useState(null);
+    const [vistaReporte, setVistaReporte] = useState('detalle');
+    const [filtrosReporte, setFiltrosReporte] = useState({
+      ciclo: 'todos',
+      region: 'todas',
+      township: 'todos'
+    });
+
+    useEffect(() => {
+      cargarDatosReporte();
+    }, []);
+
+    const cargarDatosReporte = async () => {
+      setLoadingReporte(true);
+      setErrorReporte(null);
+      
+      try {
+        const [resPendientes, resTownship, resRegion] = await Promise.all([
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
+          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
+          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
+        ]);
+
+        const pendientesResult = await resPendientes.json();
+        const townshipResult = await resTownship.json();
+        const regionResult = await resRegion.json();
+
+        setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
+        setResumenTownship(Array.isArray(townshipResult) ? townshipResult : []);
+        setResumenRegion(Array.isArray(regionResult) ? regionResult : []);
+      } catch (err) {
+        console.error('Error cargando datos:', err);
+        setErrorReporte(err.message);
+      } finally {
+        setLoadingReporte(false);
+      }
+    };
+
+    const ciclosUnicos = [...new Set(pendientesData.map(p => p.ciclo_revaluacion))].sort();
+    const regionesUnicas = [...new Set(pendientesData.map(p => p.township_region))].filter(Boolean).sort();
+    const townshipsUnicos = [...new Set(pendientesData.map(p => p.township_nombre))].sort();
+
+    const datosFiltrados = pendientesData.filter(p => {
+      if (filtrosReporte.ciclo !== 'todos' && p.ciclo_revaluacion !== parseInt(filtrosReporte.ciclo)) return false;
+      if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
+      if (filtrosReporte.township !== 'todos' && p.township_nombre !== filtrosReporte.township) return false;
+      return true;
+    });
+
+    const clientesAgrupados = datosFiltrados.reduce((acc, item) => {
+      if (!acc[item.cliente_id]) {
+        acc[item.cliente_id] = { ...item, propiedades: [] };
+      }
+      acc[item.cliente_id].propiedades.push({
+        id: item.propiedad_id,
+        pin: item.propiedad_pin,
+        direccion: item.propiedad_direccion,
+        township: item.township_nombre
+      });
+      return acc;
+    }, {});
+
+    const getColorCiclo = (ciclo) => {
+      switch(ciclo) {
+        case 2023: return 'bg-orange-100 text-orange-800 border-orange-300';
+        case 2024: return 'bg-blue-100 text-blue-800 border-blue-300';
+        case 2025: return 'bg-green-100 text-green-800 border-green-300';
+        default: return 'bg-gray-100 text-gray-800 border-gray-300';
+      }
+    };
+
+    const getColorRegion = (region) => {
+      switch(region) {
+        case 'South-West': return 'bg-orange-50 border-l-4 border-orange-500';
+        case 'Chicago': return 'bg-blue-50 border-l-4 border-blue-500';
+        case 'North': return 'bg-green-50 border-l-4 border-green-500';
+        default: return 'bg-gray-50 border-l-4 border-gray-500';
+      }
+    };
+
+    const getColorFaltantes = (cantidad) => {
+      if (cantidad >= 3) return 'bg-red-500 text-white';
+      if (cantidad === 2) return 'bg-orange-500 text-white';
+      return 'bg-yellow-500 text-white';
+    };
+
+    const exportarCSV = () => {
+      const headers = [
+        'Cliente', 'Email', 'Teléfono', 'PIN', 'Dirección', 
+        'Township', 'Región', 'Ciclo', 'Próx. Revaluación',
+        'Años Trienio', 'Años Facturados', 'Años Faltantes', 'Cant. Faltantes'
+      ];
+      
+      const rows = datosFiltrados.map(p => [
+        (p.cliente_nombre || '') + ' ' + (p.cliente_apellido || ''),
+        p.cliente_email || '',
+        p.cliente_telefono || '',
+        p.propiedad_pin || '',
+        p.propiedad_direccion || '',
+        p.township_nombre || '',
+        p.township_region || '',
+        p.ciclo_revaluacion || '',
+        p.proxima_revaluacion || '',
+        p.anios_trienio || '',
+        p.anios_facturados || '',
+        p.anios_faltantes || '',
+        p.cantidad_faltantes || ''
+      ]);
+
+      const csv = [headers.join(','), ...rows.map(r => r.map(c => '"' + c + '"').join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'clientes_pendientes_' + new Date().toISOString().split('T')[0] + '.csv';
+      a.click();
+    };
+
+    const abrirExpediente = (clienteId) => {
+      api('clientes?id=eq.' + clienteId + '&select=*,propiedades(*)', { token })
+        .then(res => res.json())
+        .then(data => {
+          if (data && data[0]) {
+            setClienteSeleccionado(data[0]);
+            setVistaActual('expediente');
+          }
+        });
+    };
+
+    if (loadingReporte) {
+      return (
+        <div className="flex items-center justify-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="ml-3 text-gray-600">Cargando reporte...</span>
+        </div>
+      );
+    }
+
+    if (errorReporte) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <h3 className="text-red-800 font-medium">Error al cargar el reporte</h3>
+          <p className="text-red-600 text-sm mt-1">{errorReporte}</p>
+          <button onClick={cargarDatosReporte} className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+            Reintentar
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">📋 Clientes Pendientes por Aplicar</h1>
+          <p className="text-gray-600 mt-1">Clientes que no han aplicado para todos los años de su ciclo de revaluación</p>
+        </div>
+
+        {/* Resumen rápido */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+            <div className="text-3xl font-bold text-blue-600">{Object.keys(clientesAgrupados).length}</div>
+            <div className="text-sm text-gray-600">Clientes con años faltantes</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+            <div className="text-3xl font-bold text-orange-600">{datosFiltrados.length}</div>
+            <div className="text-sm text-gray-600">Propiedades afectadas</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
+            <div className="text-3xl font-bold text-red-600">
+              {datosFiltrados.reduce((sum, p) => sum + (p.cantidad_faltantes || 0), 0)}
+            </div>
+            <div className="text-sm text-gray-600">Total años faltantes</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
+            <div className="text-3xl font-bold text-green-600">{townshipsUnicos.length}</div>
+            <div className="text-sm text-gray-600">Townships afectados</div>
+          </div>
+        </div>
+
+        {/* Controles */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+              <button onClick={() => setVistaReporte('detalle')}
+                className={'px-4 py-2 text-sm font-medium ' + (vistaReporte === 'detalle' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
+                📝 Detalle
+              </button>
+              <button onClick={() => setVistaReporte('township')}
+                className={'px-4 py-2 text-sm font-medium border-l ' + (vistaReporte === 'township' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
+                🏘️ Por Township
+              </button>
+              <button onClick={() => setVistaReporte('region')}
+                className={'px-4 py-2 text-sm font-medium border-l ' + (vistaReporte === 'region' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
+                🗺️ Por Región
+              </button>
+            </div>
+
+            <select value={filtrosReporte.ciclo} onChange={(e) => setFiltrosReporte({...filtrosReporte, ciclo: e.target.value})}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="todos">Todos los ciclos</option>
+              {ciclosUnicos.map(c => <option key={c} value={c}>Ciclo {c}</option>)}
+            </select>
+
+            <select value={filtrosReporte.region} onChange={(e) => setFiltrosReporte({...filtrosReporte, region: e.target.value})}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="todas">Todas las regiones</option>
+              {regionesUnicas.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+
+            <select value={filtrosReporte.township} onChange={(e) => setFiltrosReporte({...filtrosReporte, township: e.target.value})}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="todos">Todos los townships</option>
+              {townshipsUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+
+            <button onClick={exportarCSV} className="ml-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+              📥 Exportar CSV
+            </button>
+
+            <button onClick={cargarDatosReporte} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">
+              🔄 Actualizar
+            </button>
+          </div>
+        </div>
+
+        {/* Vista Detalle */}
+        {vistaReporte === 'detalle' && (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Propiedad</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Township</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Ciclo</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Años Trienio</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Facturados</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Faltantes</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {datosFiltrados.map((item, idx) => (
+                    <tr key={item.cliente_id + '-' + item.propiedad_id + '-' + idx} className={getColorRegion(item.township_region)}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{item.cliente_nombre} {item.cliente_apellido}</div>
+                        <div className="text-xs text-gray-500">{item.cliente_email}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-mono text-sm text-gray-900">{item.propiedad_pin}</div>
+                        <div className="text-xs text-gray-500">{item.propiedad_direccion}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{item.township_nombre}</div>
+                        <div className="text-xs text-gray-500">{item.township_region}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ' + getColorCiclo(item.ciclo_revaluacion)}>
+                          {item.ciclo_revaluacion}
+                        </span>
+                        <div className="text-xs text-gray-500 mt-1">Próx: {item.proxima_revaluacion}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1 flex-wrap">
+                          {(item.anios_trienio || '').split(', ').filter(Boolean).map(a => (
+                            <span key={a} className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded">{a}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.anios_facturados ? (
+                          <div className="flex gap-1 flex-wrap">
+                            {item.anios_facturados.split(',').map((a, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">✓ {a.trim()}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-xs">Sin facturas</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={'px-2 py-1 rounded text-xs font-bold ' + getColorFaltantes(item.cantidad_faltantes)}>
+                            {item.cantidad_faltantes}
+                          </span>
+                          <div className="flex gap-1 flex-wrap">
+                            {(item.anios_faltantes || '').split(', ').filter(Boolean).map((a, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded font-medium">⚠️ {a}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button onClick={() => abrirExpediente(item.cliente_id)}
+                          className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                          Ver
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {datosFiltrados.length === 0 && (
+              <div className="text-center py-8 text-gray-500">No hay clientes pendientes con los filtros seleccionados</div>
+            )}
+          </div>
+        )}
+
+        {/* Vista por Township */}
+        {vistaReporte === 'township' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {resumenTownship.map((t, idx) => (
+              <div key={t.township_nombre + '-' + idx} className={'bg-white rounded-lg shadow p-4 ' + getColorRegion(t.region)}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-800">{t.township_nombre}</h3>
+                  <span className={'px-2 py-1 rounded text-xs font-medium ' + getColorCiclo(t.ciclo)}>Ciclo {t.ciclo}</span>
+                </div>
+                <div className="text-sm text-gray-600 mb-2">{t.region}</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="bg-white bg-opacity-50 rounded p-2">
+                    <div className="text-2xl font-bold text-blue-600">{t.clientes_con_faltantes}</div>
+                    <div className="text-xs text-gray-500">Clientes</div>
+                  </div>
+                  <div className="bg-white bg-opacity-50 rounded p-2">
+                    <div className="text-2xl font-bold text-orange-600">{t.propiedades_pendientes}</div>
+                    <div className="text-xs text-gray-500">Propiedades</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Vista por Región */}
+        {vistaReporte === 'region' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {resumenRegion.map((r, idx) => (
+              <div key={r.region + '-' + r.ciclo + '-' + idx} className={'bg-white rounded-lg shadow-lg p-6 ' + getColorRegion(r.region)}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-gray-800">{r.region}</h3>
+                  <span className={'px-3 py-1 rounded-full text-sm font-medium ' + getColorCiclo(r.ciclo)}>Ciclo {r.ciclo}</span>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                    <span className="text-gray-600">Townships afectados</span>
+                    <span className="text-2xl font-bold text-purple-600">{r.townships_afectados}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                    <span className="text-gray-600">Total clientes</span>
+                    <span className="text-2xl font-bold text-blue-600">{r.total_clientes}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                    <span className="text-gray-600">Total propiedades</span>
+                    <span className="text-2xl font-bold text-orange-600">{r.total_propiedades}</span>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="text-sm text-gray-500">Próxima revaluación: <strong>{r.ciclo + 3}</strong></div>
+                  <div className="text-sm text-gray-500">Años del trienio: <strong>{r.ciclo}, {r.ciclo + 1}, {r.ciclo + 2}</strong></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Leyenda */}
+        <div className="mt-6 bg-gray-50 rounded-lg p-4">
+          <h4 className="font-medium text-gray-700 mb-2">📖 Leyenda de Colores</h4>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></span>
+              <span>Ciclo 2023 (South-West)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></span>
+              <span>Ciclo 2024 (Chicago)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
+              <span>Ciclo 2025 (North)</span>
+            </div>
+            <span className="text-gray-400">|</span>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-yellow-500 rounded"></span>
+              <span>1 año faltante</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-orange-500 rounded"></span>
+              <span>2 años faltantes</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-red-500 rounded"></span>
+              <span>3 años faltantes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render current view
   const renderView = () => {
     switch (vistaActual) {
@@ -3484,6 +3893,7 @@ export default function PTRSSystem() {
       case 'facturas': return <Facturas />;
       case 'corte': return <CorteSemanal />;
       case 'plantillas': return <Plantillas />;
+      case 'reportePendientes': return <ReportePendientesTrienio />;
       case 'config': return <Configuracion />;
       default: return <Dashboard />;
     }
