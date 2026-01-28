@@ -2596,6 +2596,7 @@ export default function PTRSSystem() {
       numero: '',
       monto: '',
       concepto: '',
+      anios_apelacion: '',
       fecha_factura: new Date().toISOString().split('T')[0],
       fecha_emision: new Date().toISOString().split('T')[0],
       estado: 'pendiente'
@@ -2632,6 +2633,11 @@ export default function PTRSSystem() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Años de Apelación</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
+                <p className="text-xs text-gray-500 mt-1">Años fiscales cubiertos por esta factura</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2857,6 +2863,7 @@ export default function PTRSSystem() {
       numero: '',
       monto: '',
       concepto: '',
+      anios_apelacion: '',
       fecha_factura: new Date().toISOString().split('T')[0],
       fecha_emision: new Date().toISOString().split('T')[0],
       estado: 'pendiente',
@@ -2915,6 +2922,11 @@ export default function PTRSSystem() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Años de Apelación</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
+                <p className="text-xs text-gray-500 mt-1">Años fiscales cubiertos por esta factura</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
