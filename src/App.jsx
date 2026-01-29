@@ -1884,9 +1884,14 @@ export default function PTRSSystem() {
                                   <div className="flex items-center space-x-2">
                                     <span className="text-xs text-gray-400 w-5">{prop.row_number || idx + 1}.</span>
                                     <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
-                                    <span className="text-gray-500 text-xs truncate max-w-[150px]">{prop.direccion || ''}</span>
+                                    <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion || ''}</span>
                                   </div>
-                                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{prop.application_type || 'TA'}</span>
+                                  <div className="flex items-center space-x-2">
+                                    {(prop.monto_individual || prop.monto) ? (
+                                      <span className="text-xs text-green-600 font-medium">${Number(prop.monto_individual || prop.monto || 0).toLocaleString()}</span>
+                                    ) : null}
+                                    <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{prop.application_type || 'TA'}</span>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -2732,14 +2737,85 @@ export default function PTRSSystem() {
       fecha_emision: new Date().toISOString().split('T')[0],
       estado: 'pendiente'
     });
+    
+    // Propiedades para la nueva factura
+    const [propiedadesFactura, setPropiedadesFactura] = useState([]);
+    const propiedadesCliente = clienteSeleccionado?.propiedades || [];
+    
+    const togglePropiedad = (prop) => {
+      const existe = propiedadesFactura.find(p => p.id === prop.id);
+      if (existe) {
+        setPropiedadesFactura(propiedadesFactura.filter(p => p.id !== prop.id));
+      } else {
+        setPropiedadesFactura([...propiedadesFactura, {...prop, monto_individual: '', application_type: 'TA'}]);
+      }
+    };
+    
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setSaving(true);
+      try {
+        // Crear la factura
+        const res = await api('facturas', { 
+          method: 'POST', 
+          body: {...form, monto: parseFloat(form.monto) || 0}, 
+          token 
+        });
+        if (!res.ok) throw new Error('Error al guardar');
+        const facturaCreada = await res.json();
+        
+        // Si hay propiedades, crear las relaciones
+        if (facturaCreada[0] && propiedadesFactura.length > 0) {
+          for (let i = 0; i < propiedadesFactura.length; i++) {
+            const prop = propiedadesFactura[i];
+            await api('factura_propiedad', {
+              method: 'POST',
+              body: {
+                factura_id: facturaCreada[0].id,
+                propiedad_id: prop.id,
+                row_number: i + 1,
+                application_type: prop.application_type || 'TA',
+                monto: parseFloat(prop.monto_individual) || 0
+              },
+              token
+            });
+          }
+        }
+        
+        notify('Factura creada');
+        setModalActivo(null);
+        
+        // Recargar facturas
+        if (clienteSeleccionado) {
+          const factRes = await api('facturas?cliente_id=eq.' + clienteSeleccionado.id + '&order=fecha_factura.desc', { token });
+          const facturasData = await factRes.json();
+          
+          for (let fact of facturasData) {
+            const fpRes = await api('factura_propiedad?factura_id=eq.' + fact.id + '&select=*,propiedad:propiedades(*)', { token });
+            const fpData = await fpRes.json();
+            fact.propiedades_factura = fpData.map(fp => ({
+              ...fp.propiedad,
+              row_number: fp.row_number,
+              application_type: fp.application_type,
+              monto_individual: fp.monto || 0
+            }));
+          }
+          setFacturas(facturasData);
+        }
+      } catch (e) {
+        notify('Error al guardar factura', 'error');
+      }
+      setSaving(false);
+    };
+    
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">Nueva Factura</h3>
             <button onClick={() => setModalActivo(null)} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); saveFactura({...form, monto: parseFloat(form.monto) || 0}); }}>
+          <form onSubmit={handleSubmit}>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2757,8 +2833,8 @@ export default function PTRSSystem() {
                   <input className="w-full border rounded-lg px-3 py-2" value={form.numero} onChange={(e) => setForm({...form, numero: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto *</label>
-                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.monto} onChange={(e) => setForm({...form, monto: e.target.value})} required />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total</label>
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.monto} onChange={(e) => setForm({...form, monto: e.target.value})} placeholder="0.00" />
                 </div>
               </div>
               <div>
@@ -2772,8 +2848,8 @@ export default function PTRSSystem() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Factura *</label>
-                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_factura} onChange={(e) => setForm({...form, fecha_factura: e.target.value, fecha_emision: e.target.value})} required />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Factura</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_factura} onChange={(e) => setForm({...form, fecha_factura: e.target.value, fecha_emision: e.target.value})} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
@@ -2783,6 +2859,80 @@ export default function PTRSSystem() {
                     <option value="cancelada">Cancelada</option>
                   </select>
                 </div>
+              </div>
+              
+              {/* Sección de Propiedades */}
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📍 Propiedades en esta factura ({propiedadesFactura.length})
+                  {propiedadesFactura.length > 0 && (
+                    <span className="ml-2 text-green-600 font-normal">
+                      Suma PINs: ${propiedadesFactura.reduce((sum, p) => sum + (parseFloat(p.monto_individual) || 0), 0).toLocaleString()}
+                    </span>
+                  )}
+                </label>
+                
+                {/* Propiedades seleccionadas con monto */}
+                {propiedadesFactura.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    {propiedadesFactura.map((prop, idx) => (
+                      <div key={prop.id || idx} className="flex items-center justify-between bg-blue-50 p-2 rounded text-sm">
+                        <div className="flex items-center space-x-2 flex-1">
+                          <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                          <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
+                          <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="w-20 border rounded px-2 py-1 text-xs text-right"
+                            value={prop.monto_individual || ''}
+                            placeholder="0.00"
+                            onChange={(e) => {
+                              const updated = propiedadesFactura.map((p, i) => 
+                                i === idx ? {...p, monto_individual: e.target.value} : p
+                              );
+                              setPropiedadesFactura(updated);
+                            }}
+                          />
+                          <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Lista de propiedades del cliente para agregar */}
+                {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs text-gray-500 mb-1">Propiedades del cliente:</p>
+                    <div className="max-h-32 overflow-y-auto border rounded-lg">
+                      {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
+                        <div 
+                          key={prop.id} 
+                          onClick={() => togglePropiedad(prop)}
+                          className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-gray-600">{prop.pin}</span>
+                            <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                          </div>
+                          <span className="text-blue-500 text-xs">+ Agregar</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Crear nueva propiedad */}
+                <NuevaPropiedadInline 
+                  clienteId={clienteSeleccionado?.id}
+                  onPropiedadCreada={(nuevaProp) => {
+                    setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, monto_individual: '', application_type: 'TA'}]);
+                  }}
+                />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end space-x-2">
@@ -2934,7 +3084,12 @@ export default function PTRSSystem() {
           try {
             const res = await api('factura_propiedad?factura_id=eq.' + f.id + '&select=*,propiedad:propiedades(*)', { token });
             const data = await res.json();
-            setPropiedadesFactura(data.map(fp => ({...fp.propiedad, row_number: fp.row_number, application_type: fp.application_type})));
+            setPropiedadesFactura(data.map(fp => ({
+              ...fp.propiedad, 
+              row_number: fp.row_number, 
+              application_type: fp.application_type,
+              monto_individual: fp.monto || ''
+            })));
           } catch (e) {
             console.error('Error cargando propiedades:', e);
           }
@@ -2951,7 +3106,7 @@ export default function PTRSSystem() {
       if (existe) {
         setPropiedadesFactura(propiedadesFactura.filter(p => p.id !== prop.id && p.pin !== prop.pin));
       } else {
-        setPropiedadesFactura([...propiedadesFactura, {...prop, row_number: propiedadesFactura.length + 1, application_type: 'TA'}]);
+        setPropiedadesFactura([...propiedadesFactura, {...prop, row_number: propiedadesFactura.length + 1, application_type: 'TA', monto_individual: ''}]);
       }
     };
     
@@ -2971,7 +3126,7 @@ export default function PTRSSystem() {
         // Primero eliminar las existentes
         await api('factura_propiedad?factura_id=eq.' + f.id, { method: 'DELETE', token });
         
-        // Luego crear las nuevas
+        // Luego crear las nuevas con monto individual
         for (let i = 0; i < propiedadesFactura.length; i++) {
           const prop = propiedadesFactura[i];
           await api('factura_propiedad', {
@@ -2980,7 +3135,8 @@ export default function PTRSSystem() {
               factura_id: f.id,
               propiedad_id: prop.id,
               row_number: i + 1,
-              application_type: prop.application_type || 'TA'
+              application_type: prop.application_type || 'TA',
+              monto: parseFloat(prop.monto_individual) || 0
             },
             token
           });
@@ -3002,7 +3158,8 @@ export default function PTRSSystem() {
             fact.propiedades_factura = fpData.map(fp => ({
               ...fp.propiedad,
               row_number: fp.row_number,
-              application_type: fp.application_type
+              application_type: fp.application_type,
+              monto_individual: fp.monto || 0
             }));
           }
           setFacturas(facturasData);
@@ -3069,22 +3226,43 @@ export default function PTRSSystem() {
               <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   📍 Propiedades en esta factura ({propiedadesFactura.length})
+                  {propiedadesFactura.length > 0 && (
+                    <span className="ml-2 text-green-600 font-normal">
+                      Total: ${propiedadesFactura.reduce((sum, p) => sum + (parseFloat(p.monto_individual) || 0), 0).toLocaleString()}
+                    </span>
+                  )}
                 </label>
                 {loadingProps ? (
                   <p className="text-sm text-gray-500">Cargando propiedades...</p>
                 ) : (
                   <>
-                    {/* Propiedades seleccionadas */}
+                    {/* Propiedades seleccionadas con monto */}
                     {propiedadesFactura.length > 0 && (
-                      <div className="mb-3 space-y-1">
+                      <div className="mb-3 space-y-2">
                         {propiedadesFactura.map((prop, idx) => (
                           <div key={prop.id || idx} className="flex items-center justify-between bg-blue-50 p-2 rounded text-sm">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs text-gray-400">{idx + 1}.</span>
-                              <span className="font-mono text-blue-600">{prop.pin}</span>
-                              <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                            <div className="flex items-center space-x-2 flex-1">
+                              <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                              <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
+                              <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion}</span>
                             </div>
-                            <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs">✕ Quitar</button>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-gray-500">$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                className="w-20 border rounded px-2 py-1 text-xs text-right"
+                                value={prop.monto_individual || ''}
+                                placeholder="0.00"
+                                onChange={(e) => {
+                                  const updated = propiedadesFactura.map((p, i) => 
+                                    i === idx ? {...p, monto_individual: e.target.value} : p
+                                  );
+                                  setPropiedadesFactura(updated);
+                                }}
+                              />
+                              <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -3116,7 +3294,7 @@ export default function PTRSSystem() {
                     <NuevaPropiedadInline 
                       clienteId={clienteSeleccionado?.id}
                       onPropiedadCreada={(nuevaProp) => {
-                        setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, row_number: propiedadesFactura.length + 1, application_type: 'TA'}]);
+                        setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, row_number: propiedadesFactura.length + 1, application_type: 'TA', monto_individual: ''}]);
                       }}
                     />
                   </>
