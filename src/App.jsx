@@ -1807,9 +1807,8 @@ export default function PTRSSystem() {
                     <div>
                       <p className="font-medium">{d.nombre}</p>
                       <p className="text-sm text-gray-500">{d.tipo} - {d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</p>
-                      {d.notas && <p className="text-sm text-gray-600 mt-1">{d.notas}</p>}
                     </div>
-                    {d.archivo_url && <a href={d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
+                    {(d.url || d.archivo_url) && <a href={d.url || d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
                   </div>
                 )) : <p className="text-gray-500 text-center py-8">Sin documentos</p>}
               </div>
@@ -2992,9 +2991,8 @@ export default function PTRSSystem() {
                     <div>
                       <p className="font-medium">{d.nombre}</p>
                       <p className="text-sm text-gray-500">{d.tipo} - {d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</p>
-                      {d.notas && <p className="text-sm text-gray-600 mt-1">{d.notas}</p>}
                     </div>
-                    {d.archivo_url && <a href={d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
+                    {(d.url || d.archivo_url) && <a href={d.url || d.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Ver</a>}
                   </div>
                 )) : <p className="text-gray-500 text-center py-8">No hay documentos para esta propiedad</p>}
               </div>
