@@ -34,23 +34,21 @@ var authSignIn = async function(email, password) {
 var uploadFile = async function(file, folder, token) {
   var timestamp = Date.now();
   var safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  var path = folder + '/' + timestamp + '_' + safeName;
+  var safeFolder = folder.replace(/[^a-zA-Z0-9_-]/g, '_');
+  var path = safeFolder + '/' + timestamp + '_' + safeName;
   
-  console.log('Uploading to:', SUPABASE_URL + '/storage/v1/object/documentos/' + path);
-  console.log('Token exists:', !!token);
+  var url = SUPABASE_URL + '/storage/v1/object/documentos/' + encodeURIComponent(path).replace(/%2F/g, '/');
   
-  var res = await fetch(SUPABASE_URL + '/storage/v1/object/documentos/' + path, {
+  var res = await fetch(url, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_KEY,
       'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
-      'Content-Type': file.type,
+      'Content-Type': file.type || 'application/octet-stream',
       'x-upsert': 'true'
     },
     body: file
   });
-  
-  console.log('Upload response status:', res.status);
   
   if (res.ok) {
     return SUPABASE_URL + '/storage/v1/object/public/documentos/' + path;
@@ -58,7 +56,7 @@ var uploadFile = async function(file, folder, token) {
   
   var errorText = await res.text();
   console.error('Upload error:', res.status, errorText);
-  throw new Error('Error uploading: ' + res.status + ' - ' + errorText);
+  throw new Error('Error uploading: ' + res.status);
 };
 
 // Icons
