@@ -2648,8 +2648,8 @@ export default function PTRSSystem() {
       cliente_id: clienteSeleccionado?.id || '',
       nombre: '',
       tipo: 'factura',
-      notas: '',
-      archivo_url: ''
+      categoria: '',
+      url: ''
     });
     const [archivo, setArchivo] = useState(null);
     const [uploading, setUploading] = useState(false);
@@ -2658,13 +2658,20 @@ export default function PTRSSystem() {
       e.preventDefault();
       setUploading(true);
       try {
-        let archivoUrl = form.archivo_url;
+        let archivoUrl = form.url;
         if (archivo) {
           // Subir a carpeta del cliente
-          const clienteFolder = `cliente_${clienteSeleccionado?.id}`;
+          const clienteFolder = 'cliente_' + clienteSeleccionado?.id;
           archivoUrl = await uploadFile(archivo, clienteFolder, token);
         }
-        await saveDocumento({...form, archivo_url: archivoUrl});
+        await saveDocumento({
+          cliente_id: form.cliente_id,
+          nombre: form.nombre,
+          tipo: form.tipo,
+          categoria: form.categoria || null,
+          url: archivoUrl,
+          tamano: archivo ? archivo.size : null
+        });
       } catch (err) {
         notify('Error al subir archivo', 'error');
       }
@@ -2707,11 +2714,11 @@ export default function PTRSSystem() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Link externo (opcional)</label>
-                <input className="w-full border rounded-lg px-3 py-2" value={form.archivo_url} onChange={(e) => setForm({...form, archivo_url: e.target.value})} placeholder="https://drive.google.com/..." />
+                <input className="w-full border rounded-lg px-3 py-2" value={form.url} onChange={(e) => setForm({...form, url: e.target.value})} placeholder="https://drive.google.com/..." />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                <textarea className="w-full border rounded-lg px-3 py-2" value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} placeholder="Detalles adicionales..." />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} placeholder="Ej: Tax Appeal, Contrato, etc." />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end space-x-2">
