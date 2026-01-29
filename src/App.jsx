@@ -902,6 +902,9 @@ export default function PTRSSystem() {
   const mergeClientes = async (clienteOrigen, clienteDestino) => {
     setSaving(true);
     try {
+      var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
+      nombreCompleto = nombreCompleto.trim();
+      
       // Move all properties from origen to destino
       if (clienteOrigen.propiedades && clienteOrigen.propiedades.length > 0) {
         for (const prop of clienteOrigen.propiedades) {
@@ -927,12 +930,27 @@ export default function PTRSSystem() {
         token
       });
       
-      // Move facturas
-      await api(`facturas?cliente_id=eq.${clienteOrigen.id}`, {
-        method: 'PATCH',
-        body: { cliente_id: clienteDestino.id },
-        token
-      });
+      // *** ACTUALIZAR facturas con el nombre del cliente origen ANTES de transferir ***
+      // Primero obtener las facturas del cliente origen
+      const facturasRes = await api(`facturas?cliente_id=eq.${clienteOrigen.id}`, { token });
+      const facturasOrigen = await facturasRes.json() || [];
+      
+      // Actualizar cada factura agregando el nombre al concepto
+      for (const factura of facturasOrigen) {
+        var nuevoConcepto = nombreCompleto;
+        if (factura.concepto && factura.concepto.trim() !== '') {
+          nuevoConcepto = nombreCompleto + ' - ' + factura.concepto;
+        }
+        
+        await api(`facturas?id=eq.${factura.id}`, {
+          method: 'PATCH',
+          body: { 
+            cliente_id: clienteDestino.id,
+            concepto: nuevoConcepto
+          },
+          token
+        });
+      }
       
       // Move apelaciones
       await api(`apelaciones?cliente_id=eq.${clienteOrigen.id}`, {
@@ -948,22 +966,18 @@ export default function PTRSSystem() {
         token
       });
       
-      // *** NUEVO: Crear contacto alternativo con datos del cliente fusionado ***
-      var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
-      nombreCompleto = nombreCompleto.trim();
-      
-      // Determinar tipo de relación basado en el nombre
+      // Crear contacto alternativo con datos del cliente fusionado
       var relacion = 'otro';
       var nombreUpper = nombreCompleto.toUpperCase();
       if (nombreUpper.includes('LLC') || nombreUpper.includes('INC') || nombreUpper.includes('CORP') || nombreUpper.includes('PARK') || nombreUpper.includes('INDUSTRIAL')) {
         relacion = 'corporacion';
       }
       
-      // Crear nota con info adicional
       var notasContacto = [];
       if (clienteOrigen.customer_number) notasContacto.push('Customer #: ' + clienteOrigen.customer_number);
       if (clienteOrigen.work_order_number) notasContacto.push('Work Order #: ' + clienteOrigen.work_order_number);
       if (clienteOrigen.direccion_correspondencia) notasContacto.push('Dirección: ' + clienteOrigen.direccion_correspondencia);
+      notasContacto.push('Facturas transferidas: ' + facturasOrigen.length);
       notasContacto.push('Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0));
       notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString());
       
@@ -984,7 +998,7 @@ export default function PTRSSystem() {
         token
       });
       
-      // Create automatic note with merged client's data (mantener para historial)
+      // Crear nota con historial de la fusión
       var notaContenido = '📋 CLIENTE FUSIONADO:\n';
       notaContenido += 'Nombre: ' + nombreCompleto + '\n';
       if (clienteOrigen.customer_number) notaContenido += 'Customer #: ' + clienteOrigen.customer_number + '\n';
@@ -992,6 +1006,7 @@ export default function PTRSSystem() {
       if (clienteOrigen.telefono_principal) notaContenido += 'Teléfono: ' + clienteOrigen.telefono_principal + '\n';
       if (clienteOrigen.email) notaContenido += 'Email: ' + clienteOrigen.email + '\n';
       if (clienteOrigen.direccion_correspondencia) notaContenido += 'Dirección: ' + clienteOrigen.direccion_correspondencia + '\n';
+      notaContenido += 'Facturas transferidas: ' + facturasOrigen.length + '\n';
       notaContenido += 'Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0);
       
       await api('notas', {
@@ -1004,28 +1019,12 @@ export default function PTRSSystem() {
         token
       });
       
-      // Create automatic factura to preserve customer/work order numbers
-      if (clienteOrigen.customer_number || clienteOrigen.work_order_number) {
-        await api('facturas', {
-          method: 'POST',
-          body: {
-            cliente_id: clienteDestino.id,
-            customer_number: clienteOrigen.customer_number || '',
-            work_order_number: clienteOrigen.work_order_number || '',
-            numero: 'FUSION-' + new Date().getTime().toString().slice(-6),
-            monto: 0,
-            concepto: 'Registro de fusión: ' + nombreCompleto,
-            fecha_emision: new Date().toISOString().split('T')[0],
-            estado: 'pendiente'
-          },
-          token
-        });
-      }
+      // YA NO se crean facturas FUSION - la info queda en las facturas originales
       
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
-      notify('Clientes fusionados correctamente');
+      notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
       setModalActivo(null);
       setClienteParaMerge(null);
       loadClientes(busqueda, paginaActual);
