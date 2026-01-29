@@ -1580,7 +1580,6 @@ export default function PTRSSystem() {
       { id: 'documentos', label: `Documentos (${documentos.length})` },
       { id: 'notas', label: `Notas (${notas.length})` },
       { id: 'facturas', label: `Facturas (${facturas.length})` },
-      { id: 'apelaciones', label: `Apelaciones (${apelaciones.length})` },
     ];
     
     return (
@@ -1902,26 +1901,6 @@ export default function PTRSSystem() {
                     </div>
                   </div>
                 )) : <p className="text-gray-500 text-center py-8">Sin facturas</p>}
-              </div>
-            )}
-            
-            {/* Appeals Tab */}
-            {expedienteTab === 'apelaciones' && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold text-gray-900">Apelaciones</h3>
-                  <button onClick={() => setModalActivo('nuevaApelacion')} className="text-blue-600 text-sm hover:underline">+ Agregar</button>
-                </div>
-                {apelaciones.length > 0 ? apelaciones.map((a, i) => (
-                  <div key={i} className="p-4 bg-gray-50 rounded-lg mb-3">
-                    <div className="flex justify-between mb-2">
-                      <span className="font-medium">Año {a.anio} - {a.tipo}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${a.estado === 'aprobada' ? 'bg-green-100 text-green-700' : a.estado === 'rechazada' ? 'bg-red-100 text-red-700' : a.estado === 'enviada' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.estado}</span>
-                    </div>
-                    {a.ahorro && <p className="text-green-600 font-medium">Ahorro: ${a.ahorro}</p>}
-                    {a.notas && <p className="text-sm text-gray-600 mt-1">{a.notas}</p>}
-                  </div>
-                )) : <p className="text-gray-500 text-center py-8">Sin apelaciones</p>}
               </div>
             )}
           </div>
