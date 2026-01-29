@@ -2795,6 +2795,117 @@ export default function PTRSSystem() {
     );
   };
 
+  // Componente inline para crear nueva propiedad
+  const NuevaPropiedadInline = ({ clienteId, onPropiedadCreada }) => {
+    const [mostrar, setMostrar] = useState(false);
+    const [nuevaPropiedad, setNuevaPropiedad] = useState({ pin: '', direccion: '' });
+    const [creando, setCreando] = useState(false);
+    
+    const crearPropiedad = async () => {
+      if (!nuevaPropiedad.pin || nuevaPropiedad.pin.length < 10) {
+        notify('El PIN debe tener al menos 10 dígitos', 'error');
+        return;
+      }
+      
+      setCreando(true);
+      try {
+        // Determinar township por los primeros 2 dígitos del PIN
+        const pinPrefix = nuevaPropiedad.pin.substring(0, 2);
+        const townshipRes = await api('townships?codigo=eq.' + pinPrefix, { token });
+        const townshipData = await townshipRes.json();
+        const townshipId = townshipData[0]?.id || null;
+        
+        // Crear la propiedad
+        const res = await api('propiedades', {
+          method: 'POST',
+          body: {
+            cliente_id: clienteId,
+            pin: nuevaPropiedad.pin.replace(/[^0-9]/g, ''),
+            direccion: nuevaPropiedad.direccion,
+            township_id: townshipId
+          },
+          token
+        });
+        
+        if (!res.ok) throw new Error('Error al crear propiedad');
+        
+        const propCreada = await res.json();
+        notify('Propiedad creada y agregada');
+        
+        // Llamar callback con la propiedad creada
+        if (onPropiedadCreada && propCreada[0]) {
+          onPropiedadCreada(propCreada[0]);
+        }
+        
+        // Limpiar y cerrar
+        setNuevaPropiedad({ pin: '', direccion: '' });
+        setMostrar(false);
+        
+        // Recargar propiedades del cliente
+        if (clienteSeleccionado) {
+          const propRes = await api('propiedades?cliente_id=eq.' + clienteId + '&select=*,township:townships(nombre,codigo,ciclo_revaluacion)', { token });
+          const propsData = await propRes.json();
+          setClienteSeleccionado({...clienteSeleccionado, propiedades: propsData});
+        }
+      } catch (e) {
+        notify('Error al crear propiedad', 'error');
+      }
+      setCreando(false);
+    };
+    
+    if (!mostrar) {
+      return (
+        <button 
+          type="button"
+          onClick={() => setMostrar(true)}
+          className="w-full p-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600"
+        >
+          + Agregar nueva propiedad (PIN)
+        </button>
+      );
+    }
+    
+    return (
+      <div className="p-3 bg-green-50 border border-green-200 rounded-lg space-y-2">
+        <p className="text-sm font-medium text-green-800">➕ Nueva Propiedad</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="text"
+            placeholder="PIN (14 dígitos)"
+            className="border rounded px-2 py-1 text-sm"
+            value={nuevaPropiedad.pin}
+            onChange={(e) => setNuevaPropiedad({...nuevaPropiedad, pin: e.target.value.replace(/[^0-9]/g, '')})}
+            maxLength={14}
+          />
+          <input
+            type="text"
+            placeholder="Dirección"
+            className="border rounded px-2 py-1 text-sm"
+            value={nuevaPropiedad.direccion}
+            onChange={(e) => setNuevaPropiedad({...nuevaPropiedad, direccion: e.target.value})}
+          />
+        </div>
+        <div className="flex justify-end space-x-2">
+          <button 
+            type="button"
+            onClick={() => { setMostrar(false); setNuevaPropiedad({ pin: '', direccion: '' }); }}
+            className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+          >
+            Cancelar
+          </button>
+          <button 
+            type="button"
+            onClick={crearPropiedad}
+            disabled={creando || !nuevaPropiedad.pin}
+            className="px-3 py-1 bg-green-600 text-white rounded text-xs disabled:opacity-50"
+          >
+            {creando ? 'Creando...' : 'Crear y Agregar'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Editar Factura Modal
   const ModalEditarFactura = () => {
     const f = facturaEditando;
@@ -2980,23 +3091,34 @@ export default function PTRSSystem() {
                     )}
                     
                     {/* Lista de propiedades del cliente para agregar */}
-                    {propiedadesCliente.length > 0 && (
-                      <div className="max-h-40 overflow-y-auto border rounded-lg">
-                        {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
-                          <div 
-                            key={prop.id} 
-                            onClick={() => togglePropiedad(prop)}
-                            className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono text-gray-600">{prop.pin}</span>
-                              <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                    {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs text-gray-500 mb-1">Propiedades existentes del cliente:</p>
+                        <div className="max-h-32 overflow-y-auto border rounded-lg">
+                          {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
+                            <div 
+                              key={prop.id} 
+                              onClick={() => togglePropiedad(prop)}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <span className="font-mono text-gray-600">{prop.pin}</span>
+                                <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                              </div>
+                              <span className="text-blue-500 text-xs">+ Agregar</span>
                             </div>
-                            <span className="text-blue-500 text-xs">+ Agregar</span>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     )}
+                    
+                    {/* Crear nueva propiedad */}
+                    <NuevaPropiedadInline 
+                      clienteId={clienteSeleccionado?.id}
+                      onPropiedadCreada={(nuevaProp) => {
+                        setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, row_number: propiedadesFactura.length + 1, application_type: 'TA'}]);
+                      }}
+                    />
                   </>
                 )}
               </div>
