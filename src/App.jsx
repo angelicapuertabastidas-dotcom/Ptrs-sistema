@@ -2811,23 +2811,90 @@ export default function PTRSSystem() {
       estado: f.estado || 'pendiente'
     });
     
+    // Propiedades asociadas a la factura
+    const [propiedadesFactura, setPropiedadesFactura] = useState(f.propiedades_factura || []);
+    const [loadingProps, setLoadingProps] = useState(false);
+    
+    // Cargar propiedades asociadas si no vienen en el objeto
+    useEffect(() => {
+      const cargarPropiedades = async () => {
+        if (!f.propiedades_factura && f.id) {
+          setLoadingProps(true);
+          try {
+            const res = await api('factura_propiedad?factura_id=eq.' + f.id + '&select=*,propiedad:propiedades(*)', { token });
+            const data = await res.json();
+            setPropiedadesFactura(data.map(fp => ({...fp.propiedad, row_number: fp.row_number, application_type: fp.application_type})));
+          } catch (e) {
+            console.error('Error cargando propiedades:', e);
+          }
+          setLoadingProps(false);
+        }
+      };
+      cargarPropiedades();
+    }, [f.id]);
+    
+    const propiedadesCliente = clienteSeleccionado?.propiedades || [];
+    
+    const togglePropiedad = (prop) => {
+      const existe = propiedadesFactura.find(p => p.id === prop.id || p.pin === prop.pin);
+      if (existe) {
+        setPropiedadesFactura(propiedadesFactura.filter(p => p.id !== prop.id && p.pin !== prop.pin));
+      } else {
+        setPropiedadesFactura([...propiedadesFactura, {...prop, row_number: propiedadesFactura.length + 1, application_type: 'TA'}]);
+      }
+    };
+    
     const handleUpdate = async (e) => {
       e.preventDefault();
       setSaving(true);
       try {
+        // Actualizar factura
         const res = await api('facturas?id=eq.' + f.id, { 
           method: 'PATCH', 
           body: {...form, monto: parseFloat(form.monto) || 0}, 
           token 
         });
         if (!res.ok) throw new Error('Error al actualizar');
+        
+        // Actualizar relaciones factura-propiedad
+        // Primero eliminar las existentes
+        await api('factura_propiedad?factura_id=eq.' + f.id, { method: 'DELETE', token });
+        
+        // Luego crear las nuevas
+        for (let i = 0; i < propiedadesFactura.length; i++) {
+          const prop = propiedadesFactura[i];
+          await api('factura_propiedad', {
+            method: 'POST',
+            body: {
+              factura_id: f.id,
+              propiedad_id: prop.id,
+              row_number: i + 1,
+              application_type: prop.application_type || 'TA'
+            },
+            token
+          });
+        }
+        
         notify('Factura actualizada');
         setModalActivo(null);
         setFacturaEditando(null);
-        // Recargar facturas
+        
+        // Recargar facturas con propiedades
         if (clienteSeleccionado) {
           const factRes = await api('facturas?cliente_id=eq.' + clienteSeleccionado.id + '&order=fecha_factura.desc', { token });
-          setFacturas(await factRes.json());
+          const facturasData = await factRes.json();
+          
+          // Cargar propiedades para cada factura
+          for (let fact of facturasData) {
+            const fpRes = await api('factura_propiedad?factura_id=eq.' + fact.id + '&select=*,propiedad:propiedades(*)', { token });
+            const fpData = await fpRes.json();
+            fact.propiedades_factura = fpData.map(fp => ({
+              ...fp.propiedad,
+              row_number: fp.row_number,
+              application_type: fp.application_type
+            }));
+          }
+          setFacturas(facturasData);
         }
       } catch (e) {
         notify('Error al actualizar factura', 'error');
@@ -2837,7 +2904,7 @@ export default function PTRSSystem() {
     
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">✏️ Editar Factura</h3>
             <button onClick={() => { setModalActivo(null); setFacturaEditando(null); }} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
@@ -2885,6 +2952,53 @@ export default function PTRSSystem() {
                     <option value="cancelada">Cancelada</option>
                   </select>
                 </div>
+              </div>
+              
+              {/* Sección de Propiedades */}
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  📍 Propiedades en esta factura ({propiedadesFactura.length})
+                </label>
+                {loadingProps ? (
+                  <p className="text-sm text-gray-500">Cargando propiedades...</p>
+                ) : (
+                  <>
+                    {/* Propiedades seleccionadas */}
+                    {propiedadesFactura.length > 0 && (
+                      <div className="mb-3 space-y-1">
+                        {propiedadesFactura.map((prop, idx) => (
+                          <div key={prop.id || idx} className="flex items-center justify-between bg-blue-50 p-2 rounded text-sm">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-gray-400">{idx + 1}.</span>
+                              <span className="font-mono text-blue-600">{prop.pin}</span>
+                              <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                            </div>
+                            <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs">✕ Quitar</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Lista de propiedades del cliente para agregar */}
+                    {propiedadesCliente.length > 0 && (
+                      <div className="max-h-40 overflow-y-auto border rounded-lg">
+                        {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
+                          <div 
+                            key={prop.id} 
+                            onClick={() => togglePropiedad(prop)}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono text-gray-600">{prop.pin}</span>
+                              <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
+                            </div>
+                            <span className="text-blue-500 text-xs">+ Agregar</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
             <div className="p-6 border-t flex justify-end space-x-2">
