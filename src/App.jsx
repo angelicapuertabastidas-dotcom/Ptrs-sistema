@@ -36,6 +36,9 @@ var uploadFile = async function(file, folder, token) {
   var safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   var path = folder + '/' + timestamp + '_' + safeName;
   
+  console.log('Uploading to:', SUPABASE_URL + '/storage/v1/object/documentos/' + path);
+  console.log('Token exists:', !!token);
+  
   var res = await fetch(SUPABASE_URL + '/storage/v1/object/documentos/' + path, {
     method: 'POST',
     headers: {
@@ -47,10 +50,15 @@ var uploadFile = async function(file, folder, token) {
     body: file
   });
   
+  console.log('Upload response status:', res.status);
+  
   if (res.ok) {
     return SUPABASE_URL + '/storage/v1/object/public/documentos/' + path;
   }
-  throw new Error('Error uploading file');
+  
+  var errorText = await res.text();
+  console.error('Upload error:', res.status, errorText);
+  throw new Error('Error uploading: ' + res.status + ' - ' + errorText);
 };
 
 // Icons
