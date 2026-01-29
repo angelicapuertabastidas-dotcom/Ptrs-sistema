@@ -143,6 +143,7 @@ export default function PTRSSystem() {
   const [conteosPorTownship, setConteosPorTownship] = useState({});
   const [contactosCliente, setContactosCliente] = useState([]);
   const [contactoEditando, setContactoEditando] = useState(null);
+  const [facturaEditando, setFacturaEditando] = useState(null);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -1897,6 +1898,12 @@ export default function PTRSSystem() {
                       <div className="text-right">
                         <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
                         <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
+                        <button 
+                          onClick={() => { setFacturaEditando(f); setModalActivo('editarFactura'); }}
+                          className="block mt-2 text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          ✏️ Editar
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -2781,6 +2788,108 @@ export default function PTRSSystem() {
             <div className="p-6 border-t flex justify-end space-x-2">
               <button type="button" onClick={() => setModalActivo(null)} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
               <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Editar Factura Modal
+  const ModalEditarFactura = () => {
+    const f = facturaEditando;
+    if (!f) return null;
+    
+    const [form, setForm] = useState({
+      customer_number: f.customer_number || '',
+      work_order_number: f.work_order_number || '',
+      numero: f.numero || '',
+      monto: f.monto || '',
+      concepto: f.concepto || '',
+      anios_apelacion: f.anios_apelacion || '',
+      fecha_factura: f.fecha_factura || '',
+      estado: f.estado || 'pendiente'
+    });
+    
+    const handleUpdate = async (e) => {
+      e.preventDefault();
+      setSaving(true);
+      try {
+        const res = await api('facturas?id=eq.' + f.id, { 
+          method: 'PATCH', 
+          body: {...form, monto: parseFloat(form.monto) || 0}, 
+          token 
+        });
+        if (!res.ok) throw new Error('Error al actualizar');
+        notify('Factura actualizada');
+        setModalActivo(null);
+        setFacturaEditando(null);
+        // Recargar facturas
+        if (clienteSeleccionado) {
+          const factRes = await api('facturas?cliente_id=eq.' + clienteSeleccionado.id + '&order=fecha_factura.desc', { token });
+          setFacturas(await factRes.json());
+        }
+      } catch (e) {
+        notify('Error al actualizar factura', 'error');
+      }
+      setSaving(false);
+    };
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">✏️ Editar Factura</h3>
+            <button onClick={() => { setModalActivo(null); setFacturaEditando(null); }} className="text-gray-400 hover:text-gray-600"><Icon name="x" /></button>
+          </div>
+          <form onSubmit={handleUpdate}>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.customer_number} onChange={(e) => setForm({...form, customer_number: e.target.value})} placeholder="Ej: 001234" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Work Order #</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.work_order_number} onChange={(e) => setForm({...form, work_order_number: e.target.value})} placeholder="Ej: 002345" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Número Factura</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={form.numero} onChange={(e) => setForm({...form, numero: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+                  <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={form.monto} onChange={(e) => setForm({...form, monto: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Factura</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2" value={form.fecha_factura} onChange={(e) => setForm({...form, fecha_factura: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <select className="w-full border rounded-lg px-3 py-2" value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagada">Pagada</option>
+                    <option value="cancelada">Cancelada</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button type="button" onClick={() => { setModalActivo(null); setFacturaEditando(null); }} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">{saving ? 'Guardando...' : 'Actualizar'}</button>
             </div>
           </form>
         </div>
@@ -4191,6 +4300,7 @@ export default function PTRSSystem() {
       {modalActivo === 'nuevaNota' && <ModalNuevaNota />}
       {modalActivo === 'nuevoDocumento' && <ModalNuevoDocumento />}
       {modalActivo === 'nuevaFactura' && <ModalNuevaFactura />}
+      {modalActivo === 'editarFactura' && <ModalEditarFactura />}
       {modalActivo === 'nuevaApelacion' && <ModalNuevaApelacion />}
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
       {modalActivo === 'transferirPropiedad' && <ModalTransferirPropiedad />}
