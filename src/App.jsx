@@ -829,63 +829,63 @@ export default function PTRSSystem() {
       let ciudad = '';
       let encontrado = false;
       
-      // Intentar con la API principal del Assessor
-      try {
-        const response = await fetch(`https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`);
-        console.log('Respuesta API 1:', response.status);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Datos API 1:', data);
-          if (data && data.length > 0) {
-            const info = data[0];
-            direccion = info.property_address || info.addr || info.address || '';
-            townshipNombre = info.township_name || info.township || '';
-            ciudad = info.city || info.municipality || '';
-            encontrado = true;
-          }
-        }
-      } catch (e1) {
-        console.log('Error API 1:', e1);
-      }
+      // URLs de las APIs del condado
+      const apis = [
+        `https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`,
+        `https://datacatalog.cookcountyil.gov/resource/c49d-89sn.json?pin=${pinLimpio}`,
+        `https://datacatalog.cookcountyil.gov/resource/bcnq-qi2z.json?pin=${pinLimpio}`
+      ];
       
-      // Si no encontró, intentar con otra API
-      if (!encontrado) {
+      // Probar cada API
+      for (const apiUrl of apis) {
+        if (encontrado) break;
+        
         try {
-          const response2 = await fetch(`https://datacatalog.cookcountyil.gov/resource/c49d-89sn.json?pin=${pinLimpio}`);
-          console.log('Respuesta API 2:', response2.status);
-          if (response2.ok) {
-            const data2 = await response2.json();
-            console.log('Datos API 2:', data2);
-            if (data2 && data2.length > 0) {
-              const info = data2[0];
+          // Intentar directamente primero
+          const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+          
+          console.log(`API ${apiUrl.split('/').pop().split('.')[0]}:`, response.status);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Datos:', data);
+            
+            if (data && data.length > 0) {
+              const info = data[0];
               direccion = info.property_address || info.addr || info.address || info.prop_address || '';
               townshipNombre = info.township_name || info.township || '';
               ciudad = info.city || info.municipality || '';
               encontrado = true;
             }
           }
-        } catch (e2) {
-          console.log('Error API 2:', e2);
-        }
-      }
-      
-      // Tercera opción - API de características de propiedades
-      if (!encontrado) {
-        try {
-          const response3 = await fetch(`https://datacatalog.cookcountyil.gov/resource/bcnq-qi2z.json?pin=${pinLimpio}`);
-          console.log('Respuesta API 3:', response3.status);
-          if (response3.ok) {
-            const data3 = await response3.json();
-            console.log('Datos API 3:', data3);
-            if (data3 && data3.length > 0) {
-              const info = data3[0];
-              direccion = info.property_address || info.addr || info.address || '';
-              townshipNombre = info.township_name || info.township || '';
-              encontrado = true;
+        } catch (e) {
+          console.log('Error en API:', e.message);
+          
+          // Si falla por CORS, intentar con proxy
+          try {
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
+            const proxyResponse = await fetch(proxyUrl);
+            
+            if (proxyResponse.ok) {
+              const data = await proxyResponse.json();
+              console.log('Datos (proxy):', data);
+              
+              if (data && data.length > 0) {
+                const info = data[0];
+                direccion = info.property_address || info.addr || info.address || info.prop_address || '';
+                townshipNombre = info.township_name || info.township || '';
+                ciudad = info.city || info.municipality || '';
+                encontrado = true;
+              }
             }
+          } catch (proxyError) {
+            console.log('Error con proxy:', proxyError.message);
           }
-        } catch (e3) {
-          console.log('Error API 3:', e3);
         }
       }
       
