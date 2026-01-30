@@ -949,37 +949,54 @@ export default function PTRSSystem() {
       }
       
       const propiedadOriginal = propData[0];
+      console.log('Propiedad original:', propiedadOriginal);
       
-      // 2. Marcar la propiedad original como inactiva (cambió de dueño)
-      await api(`propiedades?id=eq.${propiedadId}`, {
+      // 2. Crear una nueva propiedad para el nuevo cliente (copia) PRIMERO
+      const nuevaPropiedad = {
+        cliente_id: nuevoClienteId,
+        pin: propiedadOriginal.pin,
+        pin_formatted: propiedadOriginal.pin_formatted || null,
+        direccion: propiedadOriginal.direccion || null,
+        ciudad: propiedadOriginal.ciudad || null,
+        zip: propiedadOriginal.zip || null,
+        township_id: propiedadOriginal.township_id || null,
+        township_codigo: propiedadOriginal.township_codigo || null,
+        valor_mercado: propiedadOriginal.valor_mercado || null,
+        valor_tasado: propiedadOriginal.valor_tasado || null,
+        clase_propiedad: propiedadOriginal.clase_propiedad || null,
+        es_primaria: false,
+        activa: true
+      };
+      
+      console.log('Creando nueva propiedad:', nuevaPropiedad);
+      
+      const createRes = await api('propiedades', {
+        method: 'POST',
+        body: nuevaPropiedad,
+        token
+      });
+      
+      if (!createRes.ok) {
+        const errorText = await createRes.text();
+        console.error('Error al crear propiedad:', errorText);
+        notify('Error al crear propiedad en destino: ' + errorText, 'error');
+        setSaving(false);
+        return;
+      }
+      
+      const nuevaPropCreada = await createRes.json();
+      console.log('Nueva propiedad creada:', nuevaPropCreada);
+      
+      // 3. Solo si la creación fue exitosa, marcar la original como inactiva
+      const patchRes = await api(`propiedades?id=eq.${propiedadId}`, {
         method: 'PATCH',
         body: { activa: false },
         token
       });
       
-      // 3. Crear una nueva propiedad para el nuevo cliente (copia)
-      const nuevaPropiedad = {
-        cliente_id: nuevoClienteId,
-        pin: propiedadOriginal.pin,
-        pin_formatted: propiedadOriginal.pin_formatted,
-        direccion: propiedadOriginal.direccion,
-        ciudad: propiedadOriginal.ciudad,
-        estado: propiedadOriginal.estado,
-        zip: propiedadOriginal.zip,
-        township_id: propiedadOriginal.township_id,
-        township_codigo: propiedadOriginal.township_codigo,
-        valor_mercado: propiedadOriginal.valor_mercado,
-        valor_tasado: propiedadOriginal.valor_tasado,
-        clase_propiedad: propiedadOriginal.clase_propiedad,
-        es_primaria: false,
-        activa: true
-      };
-      
-      await api('propiedades', {
-        method: 'POST',
-        body: nuevaPropiedad,
-        token
-      });
+      if (!patchRes.ok) {
+        console.error('Error al marcar inactiva');
+      }
       
       notify('Propiedad transferida. El cliente anterior conserva el historial.');
       setModalActivo(null);
@@ -997,7 +1014,7 @@ export default function PTRSSystem() {
       }
     } catch (e) {
       console.error('Error al transferir:', e);
-      notify('Error al transferir', 'error');
+      notify('Error al transferir: ' + e.message, 'error');
     }
     setSaving(false);
   };
@@ -4188,6 +4205,21 @@ export default function PTRSSystem() {
 
   // Modal Transferir Propiedad
   const ModalTransferirPropiedad = () => {
+    const [busquedaLocal, setBusquedaLocal] = useState(busquedaTransferir);
+    const inputRef = useRef(null);
+    
+    // Debounce para la búsqueda
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        if (busquedaLocal.length >= 2) {
+          buscarClientesParaTransferir(busquedaLocal);
+        } else {
+          setResultadosTransferir([]);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }, [busquedaLocal]);
+    
     if (!propiedadParaTransferir) return null;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4205,13 +4237,11 @@ export default function PTRSSystem() {
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Buscar cliente destino:</label>
               <input 
+                ref={inputRef}
                 className="w-full border rounded-lg px-3 py-2" 
                 placeholder="Nombre, teléfono o customer #..."
-                value={busquedaTransferir}
-                onChange={(e) => {
-                  setBusquedaTransferir(e.target.value);
-                  buscarClientesParaTransferir(e.target.value);
-                }}
+                value={busquedaLocal}
+                onChange={(e) => setBusquedaLocal(e.target.value)}
               />
             </div>
             <div className="max-h-60 overflow-y-auto">
@@ -4223,7 +4253,7 @@ export default function PTRSSystem() {
                   </div>
                   <span className="text-blue-600 text-sm">Seleccionar →</span>
                 </div>
-              )) : busquedaTransferir.length >= 2 ? (
+              )) : busquedaLocal.length >= 2 ? (
                 <p className="text-gray-500 text-center py-4">No se encontraron clientes</p>
               ) : (
                 <p className="text-gray-400 text-center py-4 text-sm">Escribe al menos 2 caracteres para buscar</p>
