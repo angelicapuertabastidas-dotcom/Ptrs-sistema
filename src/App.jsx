@@ -4241,6 +4241,7 @@ export default function PTRSSystem() {
       if (!termino || termino.length < 2) return [];
       
       const terminoLimpio = termino.trim();
+      const palabras = terminoLimpio.split(/\s+/).filter(p => p.length >= 2);
       const esNumero = /^\d+$/.test(terminoLimpio.replace(/[\s\-\(\)]/g, ''));
       const esTelefono = /^[\d\s\-\(\)]+$/.test(terminoLimpio) && terminoLimpio.replace(/\D/g, '').length >= 7;
       const esPIN = /^\d{2}-?\d{2}-?\d{3}-?\d{3}-?\d{4}$/.test(terminoLimpio) || (esNumero && terminoLimpio.length >= 10);
@@ -4248,9 +4249,22 @@ export default function PTRSSystem() {
       try {
         let resultados = [];
         
-        // Buscar por nombre/apellido
+        // Buscar por nombre/apellido - mejorado para múltiples palabras
+        if (palabras.length >= 2) {
+          // Si hay dos palabras, buscar nombre Y apellido
+          const nombreRes = await api(
+            `clientes?or=(and(nombre.ilike.*${palabras[0]}*,apellido.ilike.*${palabras[1]}*),and(nombre.ilike.*${palabras[1]}*,apellido.ilike.*${palabras[0]}*))&select=*,propiedades(id,pin)&limit=10`,
+            { token }
+          );
+          if (nombreRes.ok) {
+            const datos = await nombreRes.json();
+            resultados = [...resultados, ...datos];
+          }
+        }
+        
+        // Buscar también por cada palabra individualmente
         const nombreRes = await api(
-          `clientes?or=(nombre.ilike.*${terminoLimpio}*,apellido.ilike.*${terminoLimpio}*)&select=*,propiedades(id,pin)&limit=10`,
+          `clientes?or=(nombre.ilike.*${terminoLimpio}*,apellido.ilike.*${terminoLimpio}*${palabras.length > 0 ? `,nombre.ilike.*${palabras[0]}*,apellido.ilike.*${palabras[0]}*` : ''})&select=*,propiedades(id,pin)&limit=10`,
           { token }
         );
         if (nombreRes.ok) {
