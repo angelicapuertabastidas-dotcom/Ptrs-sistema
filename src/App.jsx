@@ -4236,95 +4236,24 @@ export default function PTRSSystem() {
     const [buscandoOrigen, setBuscandoOrigen] = useState(false);
     const [buscandoDestino, setBuscandoDestino] = useState(false);
 
-    // Función de búsqueda mejorada
+    // Función de búsqueda mejorada - usa el mismo RPC que la búsqueda principal
     const buscarClientes = async (termino, excluirId = null) => {
       if (!termino || termino.length < 2) return [];
       
-      const terminoLimpio = termino.trim();
-      const palabras = terminoLimpio.split(/\s+/).filter(p => p.length >= 2);
-      const esNumero = /^\d+$/.test(terminoLimpio.replace(/[\s\-\(\)]/g, ''));
-      const esTelefono = /^[\d\s\-\(\)]+$/.test(terminoLimpio) && terminoLimpio.replace(/\D/g, '').length >= 7;
-      const esPIN = /^\d{2}-?\d{2}-?\d{3}-?\d{3}-?\d{4}$/.test(terminoLimpio) || (esNumero && terminoLimpio.length >= 10);
-      
       try {
-        let resultados = [];
-        
-        // Buscar por nombre/apellido - mejorado para múltiples palabras
-        if (palabras.length >= 2) {
-          // Si hay dos palabras, buscar nombre Y apellido
-          const nombreRes = await api(
-            `clientes?or=(and(nombre.ilike.*${palabras[0]}*,apellido.ilike.*${palabras[1]}*),and(nombre.ilike.*${palabras[1]}*,apellido.ilike.*${palabras[0]}*))&select=*,propiedades(id,pin)&limit=10`,
-            { token }
-          );
-          if (nombreRes.ok) {
-            const datos = await nombreRes.json();
-            resultados = [...resultados, ...datos];
-          }
-        }
-        
-        // Buscar también por cada palabra individualmente
-        const nombreRes = await api(
-          `clientes?or=(nombre.ilike.*${terminoLimpio}*,apellido.ilike.*${terminoLimpio}*${palabras.length > 0 ? `,nombre.ilike.*${palabras[0]}*,apellido.ilike.*${palabras[0]}*` : ''})&select=*,propiedades(id,pin)&limit=10`,
-          { token }
-        );
-        if (nombreRes.ok) {
-          const datos = await nombreRes.json();
-          resultados = [...resultados, ...datos];
-        }
-        
-        // Buscar por teléfono
-        if (esTelefono) {
-          const telLimpio = terminoLimpio.replace(/\D/g, '');
-          const telRes = await api(
-            `clientes?or=(telefono_principal.ilike.*${telLimpio}*,telefono_secundario.ilike.*${telLimpio}*)&select=*,propiedades(id,pin)&limit=10`,
-            { token }
-          );
-          if (telRes.ok) {
-            const datos = await telRes.json();
-            resultados = [...resultados, ...datos];
-          }
-        }
-        
-        // Buscar por PIN
-        if (esPIN) {
-          const pinLimpio = terminoLimpio.replace(/-/g, '');
-          const pinRes = await api(
-            `propiedades?pin=ilike.*${pinLimpio}*&select=*,cliente:clientes(*)&limit=10`,
-            { token }
-          );
-          if (pinRes.ok) {
-            const propiedades = await pinRes.json();
-            const clientesDePIN = propiedades
-              .filter(p => p.cliente)
-              .map(p => ({ ...p.cliente, propiedades: [{ id: p.id, pin: p.pin }] }));
-            resultados = [...resultados, ...clientesDePIN];
-          }
-        }
-        
-        // Buscar por customer_number o work_order
-        if (esNumero) {
-          const factRes = await api(
-            `facturas?or=(customer_number.ilike.*${terminoLimpio}*,work_order_number.ilike.*${terminoLimpio}*)&select=*,cliente:clientes(*)&limit=10`,
-            { token }
-          );
-          if (factRes.ok) {
-            const facturas = await factRes.json();
-            const clientesDeFactura = facturas
-              .filter(f => f.cliente)
-              .map(f => f.cliente);
-            resultados = [...resultados, ...clientesDeFactura];
-          }
-        }
-        
-        // Eliminar duplicados y excluir el cliente especificado
-        const uniqueMap = new Map();
-        resultados.forEach(c => {
-          if (c && c.id && c.id !== excluirId && !uniqueMap.has(c.id)) {
-            uniqueMap.set(c.id, c);
-          }
+        // Usar el mismo RPC que funciona bien en la página principal
+        const res = await api('rpc/buscar_clientes', {
+          method: 'POST',
+          body: { termino: termino.trim() },
+          token
         });
         
-        return Array.from(uniqueMap.values()).slice(0, 8);
+        if (res.ok) {
+          const datos = await res.json();
+          // Filtrar el cliente excluido si aplica
+          return (datos || []).filter(c => c.id !== excluirId);
+        }
+        return [];
       } catch (e) {
         console.error('Error buscando clientes:', e);
         return [];
