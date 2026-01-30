@@ -2819,6 +2819,12 @@ export default function PTRSSystem() {
     const [propiedadesFactura, setPropiedadesFactura] = useState([]);
     const propiedadesCliente = clienteSeleccionado?.propiedades || [];
     
+    // Calcular monto total automáticamente cuando cambian los montos individuales
+    useEffect(() => {
+      const total = propiedadesFactura.reduce((sum, p) => sum + (parseFloat(p.monto_individual) || 0), 0);
+      setForm(prev => ({ ...prev, monto: total || '' }));
+    }, [propiedadesFactura]);
+    
     // Agregar propiedad (permite duplicados con diferente tipo)
     const agregarPropiedad = (prop) => {
       const nuevaLinea = {
@@ -3208,6 +3214,12 @@ export default function PTRSSystem() {
       };
       cargarPropiedades();
     }, [f.id]);
+    
+    // Calcular monto total automáticamente cuando cambian los montos individuales
+    useEffect(() => {
+      const total = propiedadesFactura.reduce((sum, p) => sum + (parseFloat(p.monto_individual) || 0), 0);
+      setForm(prev => ({ ...prev, monto: total || '' }));
+    }, [propiedadesFactura]);
     
     const propiedadesCliente = clienteSeleccionado?.propiedades || [];
     
