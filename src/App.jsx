@@ -445,7 +445,7 @@ export default function PTRSSystem() {
           setApelaciones(await apelRes.json() || []);
           setContactosCliente(await contactosRes.json() || []);
           
-          // Cargar facturas CON sus propiedades desde factura_propiedades
+          // Cargar facturas CON sus propiedades desde factura_propiedad
           const facturasRes = await api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
           const facturasData = await facturasRes.json() || [];
           
@@ -453,7 +453,7 @@ export default function PTRSSystem() {
             facturasData.map(async (factura) => {
               try {
                 const fpRes = await api(
-                  `factura_propiedades?factura_id=eq.${factura.id}&select=*,propiedad:propiedades(id,pin,direccion,township_id)&order=row_number.asc`,
+                  `factura_propiedad?factura_id=eq.${factura.id}&select=*,propiedad:propiedades(id,pin,direccion,township_id)&order=row_number.asc`,
                   { token }
                 );
                 const fpData = await fpRes.json() || [];
@@ -463,7 +463,7 @@ export default function PTRSSystem() {
                     ...fp.propiedad,
                     row_number: fp.row_number,
                     application_type: fp.application_type,
-                    appeal_year: fp.appeal_year
+                    monto_individual: fp.monto
                   }))
                 };
               } catch (e) {
