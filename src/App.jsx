@@ -3970,20 +3970,121 @@ export default function PTRSSystem() {
     const [clienteDestino, setClienteDestino] = useState(null);
     const [searchOrigen, setSearchOrigen] = useState('');
     const [searchDestino, setSearchDestino] = useState('');
+    const [resultadosOrigen, setResultadosOrigen] = useState([]);
+    const [resultadosDestino, setResultadosDestino] = useState([]);
+    const [buscandoOrigen, setBuscandoOrigen] = useState(false);
+    const [buscandoDestino, setBuscandoDestino] = useState(false);
 
-    const clientesFiltradosOrigen = clientes.filter(c => 
-      c.nombre?.toLowerCase().includes(searchOrigen.toLowerCase()) ||
-      c.apellido?.toLowerCase().includes(searchOrigen.toLowerCase()) ||
-      c.telefono_principal?.includes(searchOrigen)
-    ).slice(0, 5);
+    // Función de búsqueda mejorada
+    const buscarClientes = async (termino, excluirId = null) => {
+      if (!termino || termino.length < 2) return [];
+      
+      const terminoLimpio = termino.trim();
+      const esNumero = /^\d+$/.test(terminoLimpio.replace(/[\s\-\(\)]/g, ''));
+      const esTelefono = /^[\d\s\-\(\)]+$/.test(terminoLimpio) && terminoLimpio.replace(/\D/g, '').length >= 7;
+      const esPIN = /^\d{2}-?\d{2}-?\d{3}-?\d{3}-?\d{4}$/.test(terminoLimpio) || (esNumero && terminoLimpio.length >= 10);
+      
+      try {
+        let resultados = [];
+        
+        // Buscar por nombre/apellido
+        const nombreRes = await api(
+          `clientes?or=(nombre.ilike.*${terminoLimpio}*,apellido.ilike.*${terminoLimpio}*)&select=*,propiedades(id,pin)&limit=10`,
+          { token }
+        );
+        if (nombreRes.ok) {
+          const datos = await nombreRes.json();
+          resultados = [...resultados, ...datos];
+        }
+        
+        // Buscar por teléfono
+        if (esTelefono) {
+          const telLimpio = terminoLimpio.replace(/\D/g, '');
+          const telRes = await api(
+            `clientes?or=(telefono_principal.ilike.*${telLimpio}*,telefono_secundario.ilike.*${telLimpio}*)&select=*,propiedades(id,pin)&limit=10`,
+            { token }
+          );
+          if (telRes.ok) {
+            const datos = await telRes.json();
+            resultados = [...resultados, ...datos];
+          }
+        }
+        
+        // Buscar por PIN
+        if (esPIN) {
+          const pinLimpio = terminoLimpio.replace(/-/g, '');
+          const pinRes = await api(
+            `propiedades?pin=ilike.*${pinLimpio}*&select=*,cliente:clientes(*)&limit=10`,
+            { token }
+          );
+          if (pinRes.ok) {
+            const propiedades = await pinRes.json();
+            const clientesDePIN = propiedades
+              .filter(p => p.cliente)
+              .map(p => ({ ...p.cliente, propiedades: [{ id: p.id, pin: p.pin }] }));
+            resultados = [...resultados, ...clientesDePIN];
+          }
+        }
+        
+        // Buscar por customer_number o work_order
+        if (esNumero) {
+          const factRes = await api(
+            `facturas?or=(customer_number.ilike.*${terminoLimpio}*,work_order_number.ilike.*${terminoLimpio}*)&select=*,cliente:clientes(*)&limit=10`,
+            { token }
+          );
+          if (factRes.ok) {
+            const facturas = await factRes.json();
+            const clientesDeFactura = facturas
+              .filter(f => f.cliente)
+              .map(f => f.cliente);
+            resultados = [...resultados, ...clientesDeFactura];
+          }
+        }
+        
+        // Eliminar duplicados y excluir el cliente especificado
+        const uniqueMap = new Map();
+        resultados.forEach(c => {
+          if (c && c.id && c.id !== excluirId && !uniqueMap.has(c.id)) {
+            uniqueMap.set(c.id, c);
+          }
+        });
+        
+        return Array.from(uniqueMap.values()).slice(0, 8);
+      } catch (e) {
+        console.error('Error buscando clientes:', e);
+        return [];
+      }
+    };
 
-    const clientesFiltradosDestino = clientes.filter(c => 
-      c.id !== clienteOrigen?.id && (
-        c.nombre?.toLowerCase().includes(searchDestino.toLowerCase()) ||
-        c.apellido?.toLowerCase().includes(searchDestino.toLowerCase()) ||
-        c.telefono_principal?.includes(searchDestino)
-      )
-    ).slice(0, 5);
+    // Efecto para buscar origen
+    useEffect(() => {
+      const timer = setTimeout(async () => {
+        if (searchOrigen.length >= 2 && !clienteOrigen) {
+          setBuscandoOrigen(true);
+          const resultados = await buscarClientes(searchOrigen);
+          setResultadosOrigen(resultados);
+          setBuscandoOrigen(false);
+        } else {
+          setResultadosOrigen([]);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }, [searchOrigen, clienteOrigen]);
+
+    // Efecto para buscar destino
+    useEffect(() => {
+      const timer = setTimeout(async () => {
+        if (searchDestino.length >= 2 && !clienteDestino) {
+          setBuscandoDestino(true);
+          const resultados = await buscarClientes(searchDestino, clienteOrigen?.id);
+          setResultadosDestino(resultados);
+          setBuscandoDestino(false);
+        } else {
+          setResultadosDestino([]);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }, [searchDestino, clienteDestino, clienteOrigen]);
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -3995,7 +4096,8 @@ export default function PTRSSystem() {
             </button>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-500 mb-4">Las propiedades del cliente origen se moverán al cliente destino, y el cliente origen será eliminado.</p>
+            <p className="text-sm text-gray-500 mb-2">Las propiedades del cliente origen se moverán al cliente destino, y el cliente origen será eliminado.</p>
+            <p className="text-xs text-blue-600 mb-4">💡 Busca por nombre, teléfono, PIN o número de customer/work order</p>
             
             <div className="grid grid-cols-2 gap-6">
               {/* Cliente Origen */}
@@ -4003,30 +4105,43 @@ export default function PTRSSystem() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Cliente a eliminar (origen)</label>
                 <input 
                   className="w-full border rounded-lg px-3 py-2 mb-2" 
-                  placeholder="Buscar cliente..." 
+                  placeholder="Nombre, teléfono, PIN..." 
                   value={searchOrigen}
                   onChange={(e) => setSearchOrigen(e.target.value)}
                 />
-                {searchOrigen && !clienteOrigen && (
-                  <div className="border rounded-lg max-h-40 overflow-y-auto">
-                    {clientesFiltradosOrigen.map(c => (
+                {buscandoOrigen && (
+                  <p className="text-xs text-gray-500 mb-2">Buscando...</p>
+                )}
+                {searchOrigen.length >= 2 && !clienteOrigen && resultadosOrigen.length > 0 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {resultadosOrigen.map(c => (
                       <div 
                         key={c.id} 
-                        className="p-2 hover:bg-gray-50 cursor-pointer"
+                        className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                         onClick={() => { setClienteOrigen(c); setSearchOrigen(''); }}
                       >
                         <p className="font-medium">{c.nombre} {c.apellido}</p>
-                        <p className="text-xs text-gray-500">{c.propiedades?.length || 0} propiedades</p>
+                        <p className="text-xs text-gray-500">
+                          {c.telefono_principal && `📞 ${c.telefono_principal}`}
+                          {c.propiedades?.length > 0 && ` • ${c.propiedades.length} prop.`}
+                          {c.propiedades?.[0]?.pin && ` • PIN: ${c.propiedades[0].pin}`}
+                        </p>
                       </div>
                     ))}
                   </div>
+                )}
+                {searchOrigen.length >= 2 && !clienteOrigen && !buscandoOrigen && resultadosOrigen.length === 0 && (
+                  <p className="text-xs text-gray-500">No se encontraron resultados</p>
                 )}
                 {clienteOrigen && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-red-800">{clienteOrigen.nombre} {clienteOrigen.apellido}</p>
-                        <p className="text-xs text-red-600">{clienteOrigen.propiedades?.length || 0} propiedades</p>
+                        <p className="text-xs text-red-600">
+                          {clienteOrigen.telefono_principal && `📞 ${clienteOrigen.telefono_principal} • `}
+                          {clienteOrigen.propiedades?.length || 0} propiedades
+                        </p>
                       </div>
                       <button onClick={() => setClienteOrigen(null)} className="text-red-400 hover:text-red-600">
                         <Icon name="x" />
@@ -4041,30 +4156,43 @@ export default function PTRSSystem() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Cliente a mantener (destino)</label>
                 <input 
                   className="w-full border rounded-lg px-3 py-2 mb-2" 
-                  placeholder="Buscar cliente..." 
+                  placeholder="Nombre, teléfono, PIN..." 
                   value={searchDestino}
                   onChange={(e) => setSearchDestino(e.target.value)}
                 />
-                {searchDestino && !clienteDestino && (
-                  <div className="border rounded-lg max-h-40 overflow-y-auto">
-                    {clientesFiltradosDestino.map(c => (
+                {buscandoDestino && (
+                  <p className="text-xs text-gray-500 mb-2">Buscando...</p>
+                )}
+                {searchDestino.length >= 2 && !clienteDestino && resultadosDestino.length > 0 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {resultadosDestino.map(c => (
                       <div 
                         key={c.id} 
-                        className="p-2 hover:bg-gray-50 cursor-pointer"
+                        className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
                         onClick={() => { setClienteDestino(c); setSearchDestino(''); }}
                       >
                         <p className="font-medium">{c.nombre} {c.apellido}</p>
-                        <p className="text-xs text-gray-500">{c.propiedades?.length || 0} propiedades</p>
+                        <p className="text-xs text-gray-500">
+                          {c.telefono_principal && `📞 ${c.telefono_principal}`}
+                          {c.propiedades?.length > 0 && ` • ${c.propiedades.length} prop.`}
+                          {c.propiedades?.[0]?.pin && ` • PIN: ${c.propiedades[0].pin}`}
+                        </p>
                       </div>
                     ))}
                   </div>
+                )}
+                {searchDestino.length >= 2 && !clienteDestino && !buscandoDestino && resultadosDestino.length === 0 && (
+                  <p className="text-xs text-gray-500">No se encontraron resultados</p>
                 )}
                 {clienteDestino && (
                   <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-green-800">{clienteDestino.nombre} {clienteDestino.apellido}</p>
-                        <p className="text-xs text-green-600">{clienteDestino.propiedades?.length || 0} propiedades</p>
+                        <p className="text-xs text-green-600">
+                          {clienteDestino.telefono_principal && `📞 ${clienteDestino.telefono_principal} • `}
+                          {clienteDestino.propiedades?.length || 0} propiedades
+                        </p>
                       </div>
                       <button onClick={() => setClienteDestino(null)} className="text-green-400 hover:text-green-600">
                         <Icon name="x" />
