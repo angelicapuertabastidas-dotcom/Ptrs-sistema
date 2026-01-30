@@ -144,6 +144,7 @@ export default function PTRSSystem() {
   const [contactosCliente, setContactosCliente] = useState([]);
   const [contactoEditando, setContactoEditando] = useState(null);
   const [facturaEditando, setFacturaEditando] = useState(null);
+  const [facturaABorrar, setFacturaABorrar] = useState(null);
   const ITEMS_POR_PAGINA = 50;
 
   // Auth effects - Safari compatible
@@ -1916,12 +1917,20 @@ export default function PTRSSystem() {
                       <div className="text-right">
                         <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
                         <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'pagada' ? 'bg-green-100 text-green-700' : f.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span>
-                        <button 
-                          onClick={() => { setFacturaEditando(f); setModalActivo('editarFactura'); }}
-                          className="block mt-2 text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          ✏️ Editar
-                        </button>
+                        <div className="flex justify-end space-x-2 mt-2">
+                          <button 
+                            onClick={() => { setFacturaEditando(f); setModalActivo('editarFactura'); }}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button 
+                            onClick={() => { setFacturaABorrar(f); setModalActivo('confirmarBorrarFactura'); }}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            🗑️ Borrar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -4803,6 +4812,53 @@ export default function PTRSSystem() {
       {modalActivo === 'nuevoDocumento' && <ModalNuevoDocumento />}
       {modalActivo === 'nuevaFactura' && <ModalNuevaFactura />}
       {modalActivo === 'editarFactura' && <ModalEditarFactura />}
+      {modalActivo === 'confirmarBorrarFactura' && facturaABorrar && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6 border-b">
+              <h3 className="font-semibold text-gray-900">🗑️ Confirmar eliminación</h3>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-4">
+                ¿Estás segura de que deseas eliminar la factura <strong>WO #{facturaABorrar.work_order_number}</strong>?
+              </p>
+              {facturaABorrar.propiedades_factura && facturaABorrar.propiedades_factura.length > 0 && (
+                <p className="text-orange-600 text-sm mb-4">
+                  ⚠️ Esta factura tiene {facturaABorrar.propiedades_factura.length} propiedad(es) asociada(s).
+                </p>
+              )}
+              <p className="text-red-600 text-sm">Esta acción no se puede deshacer.</p>
+            </div>
+            <div className="p-6 border-t flex justify-end space-x-2">
+              <button 
+                onClick={() => { setModalActivo(null); setFacturaABorrar(null); }}
+                className="px-4 py-2 border rounded-lg text-sm"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    // Primero borrar relaciones en factura_propiedad
+                    await api('factura_propiedad?factura_id=eq.' + facturaABorrar.id, { method: 'DELETE', token });
+                    // Luego borrar la factura
+                    await api('facturas?id=eq.' + facturaABorrar.id, { method: 'DELETE', token });
+                    notify('Factura eliminada');
+                    setFacturas(facturas.filter(f => f.id !== facturaABorrar.id));
+                    setModalActivo(null);
+                    setFacturaABorrar(null);
+                  } catch (e) {
+                    notify('Error al eliminar factura', 'error');
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {modalActivo === 'nuevaApelacion' && <ModalNuevaApelacion />}
       {modalActivo === 'mergeClientes' && <ModalMergeClientes />}
       {modalActivo === 'transferirPropiedad' && <ModalTransferirPropiedad />}
