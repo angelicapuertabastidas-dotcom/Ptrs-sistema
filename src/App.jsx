@@ -1008,9 +1008,19 @@ export default function PTRSSystem() {
       var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
       nombreCompleto = nombreCompleto.trim();
       
+      // *** CARGAR propiedades del cliente origen si no vienen incluidas ***
+      let propiedadesOrigen = clienteOrigen.propiedades || [];
+      if (!propiedadesOrigen.length) {
+        const propRes = await api(`propiedades?cliente_id=eq.${clienteOrigen.id}`, { token });
+        if (propRes.ok) {
+          propiedadesOrigen = await propRes.json() || [];
+        }
+      }
+      console.log('Propiedades a transferir:', propiedadesOrigen.length);
+      
       // Move all properties from origen to destino
-      if (clienteOrigen.propiedades && clienteOrigen.propiedades.length > 0) {
-        for (const prop of clienteOrigen.propiedades) {
+      if (propiedadesOrigen.length > 0) {
+        for (const prop of propiedadesOrigen) {
           await api(`propiedades?id=eq.${prop.id}`, {
             method: 'PATCH',
             body: { cliente_id: clienteDestino.id },
@@ -1081,7 +1091,7 @@ export default function PTRSSystem() {
       if (clienteOrigen.work_order_number) notasContacto.push('Work Order #: ' + clienteOrigen.work_order_number);
       if (clienteOrigen.direccion_correspondencia) notasContacto.push('Dirección: ' + clienteOrigen.direccion_correspondencia);
       notasContacto.push('Facturas transferidas: ' + facturasOrigen.length);
-      notasContacto.push('Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0));
+      notasContacto.push('Propiedades transferidas: ' + propiedadesOrigen.length);
       notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString());
       
       await api('contactos_cliente', {
