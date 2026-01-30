@@ -2755,13 +2755,20 @@ export default function PTRSSystem() {
     const [propiedadesFactura, setPropiedadesFactura] = useState([]);
     const propiedadesCliente = clienteSeleccionado?.propiedades || [];
     
-    const togglePropiedad = (prop) => {
-      const existe = propiedadesFactura.find(p => p.id === prop.id);
-      if (existe) {
-        setPropiedadesFactura(propiedadesFactura.filter(p => p.id !== prop.id));
-      } else {
-        setPropiedadesFactura([...propiedadesFactura, {...prop, monto_individual: '', application_type: 'TA'}]);
-      }
+    // Agregar propiedad (permite duplicados con diferente tipo)
+    const agregarPropiedad = (prop) => {
+      const nuevaLinea = {
+        ...prop,
+        lineaId: Date.now() + Math.random(), // ID único para cada línea
+        monto_individual: '',
+        application_type: 'TA'
+      };
+      setPropiedadesFactura([...propiedadesFactura, nuevaLinea]);
+    };
+    
+    // Quitar línea específica
+    const quitarLinea = (lineaId) => {
+      setPropiedadesFactura(propiedadesFactura.filter(p => p.lineaId !== lineaId));
     };
     
     const handleSubmit = async (e) => {
@@ -2928,7 +2935,7 @@ export default function PTRSSystem() {
                               setPropiedadesFactura(updated);
                             }}
                           />
-                          <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
+                          <button type="button" onClick={() => quitarLinea(prop.lineaId)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
                         </div>
                       </div>
                     ))}
@@ -2936,32 +2943,30 @@ export default function PTRSSystem() {
                 )}
                 
                 {/* Lista de propiedades del cliente para agregar */}
-                {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs text-gray-500 mb-1">Propiedades del cliente:</p>
-                    <div className="max-h-32 overflow-y-auto border rounded-lg">
-                      {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
-                        <div 
-                          key={prop.id} 
-                          onClick={() => togglePropiedad(prop)}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono text-gray-600">{prop.pin}</span>
-                            <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
-                          </div>
-                          <span className="text-blue-500 text-xs">+ Agregar</span>
+                <div className="mb-3">
+                  <p className="text-xs text-gray-500 mb-1">Propiedades del cliente (click para agregar):</p>
+                  <div className="max-h-32 overflow-y-auto border rounded-lg">
+                    {propiedadesCliente.map(prop => (
+                      <div 
+                        key={prop.id} 
+                        onClick={() => agregarPropiedad(prop)}
+                        className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-gray-600">{prop.pin}</span>
+                          <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
                         </div>
-                      ))}
-                    </div>
+                        <span className="text-blue-500 text-xs">+ Agregar</span>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
                 
                 {/* Crear nueva propiedad */}
                 <NuevaPropiedadInline 
                   clienteId={clienteSeleccionado?.id}
                   onPropiedadCreada={(nuevaProp) => {
-                    setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, monto_individual: '', application_type: 'TA'}]);
+                    agregarPropiedad(nuevaProp);
                   }}
                 />
               </div>
@@ -3115,8 +3120,9 @@ export default function PTRSSystem() {
           try {
             const res = await api('factura_propiedad?factura_id=eq.' + f.id + '&select=*,propiedad:propiedades(*)', { token });
             const data = await res.json();
-            setPropiedadesFactura(data.map(fp => ({
+            setPropiedadesFactura(data.map((fp, idx) => ({
               ...fp.propiedad, 
+              lineaId: fp.id || Date.now() + idx, // Usar ID de factura_propiedad como lineaId
               row_number: fp.row_number, 
               application_type: fp.application_type,
               monto_individual: fp.monto || ''
@@ -3132,13 +3138,24 @@ export default function PTRSSystem() {
     
     const propiedadesCliente = clienteSeleccionado?.propiedades || [];
     
-    const togglePropiedad = (prop) => {
-      const existe = propiedadesFactura.find(p => p.id === prop.id || p.pin === prop.pin);
-      if (existe) {
-        setPropiedadesFactura(propiedadesFactura.filter(p => p.id !== prop.id && p.pin !== prop.pin));
-      } else {
-        setPropiedadesFactura([...propiedadesFactura, {...prop, row_number: propiedadesFactura.length + 1, application_type: 'TA', monto_individual: ''}]);
-      }
+    // Agregar propiedad (permite duplicados con diferente tipo)
+    const agregarPropiedad = (prop) => {
+      const nuevaLinea = {
+        ...prop,
+        lineaId: Date.now() + Math.random(), // ID único para cada línea
+        row_number: propiedadesFactura.length + 1,
+        monto_individual: '',
+        application_type: 'TA'
+      };
+      setPropiedadesFactura([...propiedadesFactura, nuevaLinea]);
+    };
+    
+    // Quitar línea específica (por lineaId o por índice si no tiene lineaId)
+    const quitarLinea = (lineaIdOrIdx) => {
+      setPropiedadesFactura(propiedadesFactura.filter((p, idx) => {
+        if (p.lineaId) return p.lineaId !== lineaIdOrIdx;
+        return idx !== lineaIdOrIdx;
+      }));
     };
     
     const handleUpdate = async (e) => {
@@ -3310,7 +3327,7 @@ export default function PTRSSystem() {
                                   setPropiedadesFactura(updated);
                                 }}
                               />
-                              <button type="button" onClick={() => togglePropiedad(prop)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
+                              <button type="button" onClick={() => quitarLinea(prop.lineaId || prop.id)} className="text-red-500 hover:text-red-700 text-xs ml-1">✕</button>
                             </div>
                           </div>
                         ))}
@@ -3318,32 +3335,30 @@ export default function PTRSSystem() {
                     )}
                     
                     {/* Lista de propiedades del cliente para agregar */}
-                    {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1">Propiedades existentes del cliente:</p>
-                        <div className="max-h-32 overflow-y-auto border rounded-lg">
-                          {propiedadesCliente.filter(p => !propiedadesFactura.find(pf => pf.id === p.id)).map(prop => (
-                            <div 
-                              key={prop.id} 
-                              onClick={() => togglePropiedad(prop)}
-                              className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <span className="font-mono text-gray-600">{prop.pin}</span>
-                                <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
-                              </div>
-                              <span className="text-blue-500 text-xs">+ Agregar</span>
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500 mb-1">Propiedades del cliente (click para agregar):</p>
+                      <div className="max-h-32 overflow-y-auto border rounded-lg">
+                        {propiedadesCliente.map(prop => (
+                          <div 
+                            key={prop.id} 
+                            onClick={() => agregarPropiedad(prop)}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 text-sm"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono text-gray-600">{prop.pin}</span>
+                              <span className="text-gray-500 text-xs truncate max-w-[200px]">{prop.direccion}</span>
                             </div>
-                          ))}
-                        </div>
+                            <span className="text-blue-500 text-xs">+ Agregar</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
                     
                     {/* Crear nueva propiedad */}
                     <NuevaPropiedadInline 
                       clienteId={clienteSeleccionado?.id}
                       onPropiedadCreada={(nuevaProp) => {
-                        setPropiedadesFactura([...propiedadesFactura, {...nuevaProp, row_number: propiedadesFactura.length + 1, application_type: 'TA', monto_individual: ''}]);
+                        agregarPropiedad(nuevaProp);
                       }}
                     />
                   </>
