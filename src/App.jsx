@@ -3547,16 +3547,119 @@ export default function PTRSSystem() {
       { id: 'notas', label: `Notas (${propiedadNotas.length})` },
     ];
     
+    const [editandoPropiedad, setEditandoPropiedad] = useState(false);
+    const [pinEditado, setPinEditado] = useState(propiedadSeleccionada?.pin || '');
+    const [direccionEditada, setDireccionEditada] = useState(propiedadSeleccionada?.direccion || '');
+    
+    const guardarEdicionPropiedad = async () => {
+      if (!pinEditado.trim()) {
+        notify('El PIN es requerido', 'error');
+        return;
+      }
+      try {
+        const pinLimpio = pinEditado.replace(/-/g, '');
+        const updateData = {
+          pin: pinLimpio,
+          direccion: direccionEditada
+        };
+        
+        const res = await api(`propiedades?id=eq.${propiedadSeleccionada.id}`, {
+          method: 'PATCH',
+          body: updateData,
+          token
+        });
+        
+        if (res.ok) {
+          setPropiedadSeleccionada({...propiedadSeleccionada, ...updateData});
+          setEditandoPropiedad(false);
+          notify('Propiedad actualizada');
+          
+          // Recargar cliente
+          if (clienteSeleccionado) {
+            const clienteRes = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+            const clienteData = await clienteRes.json();
+            if (clienteData && clienteData[0]) {
+              setClienteSeleccionado(clienteData[0]);
+            }
+          }
+        } else {
+          notify('Error al actualizar', 'error');
+        }
+      } catch (e) {
+        notify('Error al guardar', 'error');
+      }
+    };
+    
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-white">
             <div className="flex justify-between items-start">
-              <div>
+              <div className="flex-1">
                 <p className="text-sm text-gray-500 mb-1">Expediente de Propiedad</p>
-                <h2 className="font-mono text-2xl font-bold text-blue-600">{propiedadSeleccionada.pin}</h2>
-                <p className="text-gray-600 mt-1">{propiedadSeleccionada.direccion || 'Sin dirección'}</p>
+                
+                {editandoPropiedad ? (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-gray-500">PIN</label>
+                      <input
+                        type="text"
+                        value={pinEditado}
+                        onChange={(e) => setPinEditado(e.target.value)}
+                        className="w-full font-mono text-xl font-bold text-blue-600 border rounded px-2 py-1"
+                        placeholder="Ej: 16303200030000"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Dirección</label>
+                      <input
+                        type="text"
+                        value={direccionEditada}
+                        onChange={(e) => setDireccionEditada(e.target.value)}
+                        className="w-full text-gray-600 border rounded px-2 py-1"
+                        placeholder="Ej: 3005 HARLEM AVE"
+                      />
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={guardarEdicionPropiedad}
+                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                      >
+                        ✓ Guardar
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditandoPropiedad(false);
+                          setPinEditado(propiedadSeleccionada?.pin || '');
+                          setDireccionEditada(propiedadSeleccionada?.direccion || '');
+                        }}
+                        className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-300"
+                      >
+                        ✕ Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center space-x-2">
+                      <h2 className="font-mono text-2xl font-bold text-blue-600">{propiedadSeleccionada.pin}</h2>
+                      <button
+                        onClick={() => {
+                          setPinEditado(propiedadSeleccionada?.pin || '');
+                          setDireccionEditada(propiedadSeleccionada?.direccion || '');
+                          setEditandoPropiedad(true);
+                        }}
+                        className="text-gray-400 hover:text-blue-600 text-sm"
+                        title="Editar PIN y dirección"
+                      >
+                        ✏️
+                      </button>
+                    </div>
+                    <p className="text-gray-600 mt-1">{propiedadSeleccionada.direccion || 'Sin dirección'}</p>
+                  </>
+                )}
+                
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                   {twp && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{twp.nombre}</span>}
                   {!twp && <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Sin township</span>}
