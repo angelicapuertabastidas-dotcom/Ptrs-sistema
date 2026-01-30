@@ -827,65 +827,51 @@ export default function PTRSSystem() {
       let direccion = '';
       let townshipNombre = '';
       let ciudad = '';
+      let zip = '';
       let encontrado = false;
       
-      // URLs de las APIs del condado
-      const apis = [
-        `https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`,
-        `https://datacatalog.cookcountyil.gov/resource/c49d-89sn.json?pin=${pinLimpio}`,
-        `https://datacatalog.cookcountyil.gov/resource/bcnq-qi2z.json?pin=${pinLimpio}`
-      ];
-      
-      // Probar cada API
-      for (const apiUrl of apis) {
-        if (encontrado) break;
+      // API que tiene direcciones (tx2p-k2g9)
+      try {
+        const response = await fetch(`https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json?pin=${pinLimpio}&$order=year DESC&$limit=1`);
+        console.log('Respuesta API:', response.status);
         
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Datos:', data);
+          
+          if (data && data.length > 0) {
+            const info = data[0];
+            direccion = info.prop_address_full || '';
+            townshipNombre = info.township_name || '';
+            ciudad = info.prop_address_city_name || '';
+            zip = info.prop_address_zipcode_1 || '';
+            encontrado = true;
+            console.log('Encontrado:', { direccion, townshipNombre, ciudad, zip });
+          }
+        }
+      } catch (e) {
+        console.log('Error API directa:', e.message);
+        
+        // Intentar con proxy si falla por CORS
         try {
-          // Intentar directamente primero
-          const response = await fetch(apiUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json'
-            }
-          });
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json?pin=${pinLimpio}&$order=year DESC&$limit=1`)}`;
+          const proxyResponse = await fetch(proxyUrl);
           
-          console.log(`API ${apiUrl.split('/').pop().split('.')[0]}:`, response.status);
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log('Datos:', data);
+          if (proxyResponse.ok) {
+            const data = await proxyResponse.json();
+            console.log('Datos (proxy):', data);
             
             if (data && data.length > 0) {
               const info = data[0];
-              direccion = info.property_address || info.addr || info.address || info.prop_address || '';
-              townshipNombre = info.township_name || info.township || '';
-              ciudad = info.city || info.municipality || '';
+              direccion = info.prop_address_full || '';
+              townshipNombre = info.township_name || '';
+              ciudad = info.prop_address_city_name || '';
+              zip = info.prop_address_zipcode_1 || '';
               encontrado = true;
             }
           }
-        } catch (e) {
-          console.log('Error en API:', e.message);
-          
-          // Si falla por CORS, intentar con proxy
-          try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
-            const proxyResponse = await fetch(proxyUrl);
-            
-            if (proxyResponse.ok) {
-              const data = await proxyResponse.json();
-              console.log('Datos (proxy):', data);
-              
-              if (data && data.length > 0) {
-                const info = data[0];
-                direccion = info.property_address || info.addr || info.address || info.prop_address || '';
-                townshipNombre = info.township_name || info.township || '';
-                ciudad = info.city || info.municipality || '';
-                encontrado = true;
-              }
-            }
-          } catch (proxyError) {
-            console.log('Error con proxy:', proxyError.message);
-          }
+        } catch (proxyError) {
+          console.log('Error con proxy:', proxyError.message);
         }
       }
       
@@ -894,6 +880,7 @@ export default function PTRSSystem() {
         let townshipId = null;
         if (townshipNombre) {
           const twpEncontrado = townships.find(t => 
+            t.nombre.toLowerCase() === townshipNombre.toLowerCase() ||
             t.nombre.toLowerCase().includes(townshipNombre.toLowerCase()) ||
             townshipNombre.toLowerCase().includes(t.nombre.toLowerCase())
           );
@@ -906,7 +893,10 @@ export default function PTRSSystem() {
         const updateData = {};
         if (direccion) updateData.direccion = direccion;
         if (ciudad) updateData.ciudad = ciudad;
+        if (zip) updateData.zip = zip;
         if (townshipId) updateData.township_id = townshipId;
+        
+        console.log('Actualizando con:', updateData);
         
         if (Object.keys(updateData).length > 0) {
           const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
@@ -928,7 +918,7 @@ export default function PTRSSystem() {
               }
             }
             
-            notify(`✅ Actualizado: ${direccion || 'Sin dirección'}${townshipNombre ? ' - ' + townshipNombre : ''}`);
+            notify(`✅ Actualizado: ${direccion}${ciudad ? ', ' + ciudad : ''}${townshipNombre ? ' - ' + townshipNombre : ''}`);
           } else {
             notify('Error al guardar los datos', 'error');
           }
