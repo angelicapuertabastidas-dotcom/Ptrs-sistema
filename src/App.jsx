@@ -938,16 +938,55 @@ export default function PTRSSystem() {
   const transferirPropiedad = async (propiedadId, nuevoClienteId) => {
     setSaving(true);
     try {
+      // 1. Obtener datos de la propiedad original
+      const propRes = await api(`propiedades?id=eq.${propiedadId}`, { token });
+      const propData = await propRes.json();
+      
+      if (!propData || propData.length === 0) {
+        notify('Propiedad no encontrada', 'error');
+        setSaving(false);
+        return;
+      }
+      
+      const propiedadOriginal = propData[0];
+      
+      // 2. Marcar la propiedad original como inactiva (cambió de dueño)
       await api(`propiedades?id=eq.${propiedadId}`, {
         method: 'PATCH',
-        body: { cliente_id: nuevoClienteId },
+        body: { activa: false },
         token
       });
-      notify('Propiedad transferida');
+      
+      // 3. Crear una nueva propiedad para el nuevo cliente (copia)
+      const nuevaPropiedad = {
+        cliente_id: nuevoClienteId,
+        pin: propiedadOriginal.pin,
+        pin_formatted: propiedadOriginal.pin_formatted,
+        direccion: propiedadOriginal.direccion,
+        ciudad: propiedadOriginal.ciudad,
+        estado: propiedadOriginal.estado,
+        zip: propiedadOriginal.zip,
+        township_id: propiedadOriginal.township_id,
+        township_codigo: propiedadOriginal.township_codigo,
+        valor_mercado: propiedadOriginal.valor_mercado,
+        valor_tasado: propiedadOriginal.valor_tasado,
+        clase_propiedad: propiedadOriginal.clase_propiedad,
+        es_primaria: false,
+        activa: true
+      };
+      
+      await api('propiedades', {
+        method: 'POST',
+        body: nuevaPropiedad,
+        token
+      });
+      
+      notify('Propiedad transferida. El cliente anterior conserva el historial.');
       setModalActivo(null);
       setPropiedadParaTransferir(null);
       setBusquedaTransferir('');
       setResultadosTransferir([]);
+      
       // Reload current client
       if (clienteSeleccionado) {
         const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
@@ -957,6 +996,7 @@ export default function PTRSSystem() {
         }
       }
     } catch (e) {
+      console.error('Error al transferir:', e);
       notify('Error al transferir', 'error');
     }
     setSaving(false);
@@ -1633,7 +1673,7 @@ export default function PTRSSystem() {
     const tabs = [
       { id: 'info', label: 'Información' },
       { id: 'contactos', label: `Contactos (${contactosCliente.length})` },
-      { id: 'propiedades', label: `Propiedades (${cliente.propiedades?.length || 0})` },
+      { id: 'propiedades', label: `Propiedades (${cliente.propiedades?.filter(p => p.activa !== false).length || 0}${cliente.propiedades?.filter(p => p.activa === false).length > 0 ? ' + ' + cliente.propiedades.filter(p => p.activa === false).length + ' inactivas' : ''})` },
       { id: 'documentos', label: `Documentos (${documentos.length})` },
       { id: 'notas', label: `Notas (${notas.length})` },
       { id: 'facturas', label: `Facturas (${facturas.length})` },
@@ -1793,14 +1833,20 @@ export default function PTRSSystem() {
                 </div>
                 {cliente.propiedades?.length > 0 ? cliente.propiedades.map((p, idx) => {
                   const twp = townships.find(t => t.id === p.township_id);
+                  const esInactiva = p.activa === false;
                   return (
-                    <div key={idx} className="p-4 bg-gray-50 rounded-lg mb-3 border-l-4 border-blue-400">
+                    <div key={idx} className={`p-4 rounded-lg mb-3 border-l-4 ${esInactiva ? 'bg-gray-100 border-gray-400 opacity-75' : 'bg-gray-50 border-blue-400'}`}>
                       <div className="flex justify-between items-start">
                         <div 
                           className="cursor-pointer hover:opacity-80"
                           onClick={() => { setPropiedadSeleccionada(p); setPropiedadTab('documentos'); setModalActivo('expedientePropiedad'); }}
                         >
-                          <p className="font-mono text-lg font-semibold text-blue-600 hover:underline">{p.pin}</p>
+                          <div className="flex items-center space-x-2">
+                            <p className={`font-mono text-lg font-semibold hover:underline ${esInactiva ? 'text-gray-500' : 'text-blue-600'}`}>{p.pin}</p>
+                            {esInactiva && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700">🔄 Cambió de dueño</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex space-x-2">
                           <button 
@@ -1809,12 +1855,30 @@ export default function PTRSSystem() {
                           >
                             📁 Expediente
                           </button>
-                          <button 
-                            onClick={() => { setPropiedadParaTransferir(p); setModalActivo('transferirPropiedad'); }}
-                            className="text-xs text-orange-600 hover:text-orange-800 border border-orange-300 px-2 py-1 rounded"
-                          >
-                            Transferir
-                          </button>
+                          {!esInactiva && (
+                            <button 
+                              onClick={() => { setPropiedadParaTransferir(p); setModalActivo('transferirPropiedad'); }}
+                              className="text-xs text-orange-600 hover:text-orange-800 border border-orange-300 px-2 py-1 rounded"
+                            >
+                              Transferir
+                            </button>
+                          )}
+                          {esInactiva && (
+                            <button 
+                              onClick={async () => {
+                                if (window.confirm('¿Reactivar esta propiedad para este cliente?')) {
+                                  await api(`propiedades?id=eq.${p.id}`, { method: 'PATCH', body: { activa: true }, token });
+                                  const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+                                  const data = await res.json();
+                                  if (data && data[0]) setClienteSeleccionado(data[0]);
+                                  notify('Propiedad reactivada');
+                                }
+                              }}
+                              className="text-xs text-green-600 hover:text-green-800 border border-green-300 px-2 py-1 rounded"
+                            >
+                              ✓ Reactivar
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="mt-3">
@@ -1968,6 +2032,11 @@ export default function PTRSSystem() {
                         )}
                         
                         {f.concepto && <p className="text-sm text-gray-600 mt-2">{f.concepto}</p>}
+                        {f.notas && (
+                          <div className="mt-2 p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded">
+                            <p className="text-sm text-yellow-800">📝 {f.notas}</p>
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold text-gray-900">${Number(f.monto || 0).toLocaleString()}</p>
@@ -2809,6 +2878,7 @@ export default function PTRSSystem() {
       numero: '',
       monto: '',
       concepto: '',
+      notas: '',
       anios_apelacion: '',
       fecha_factura: new Date().toISOString().split('T')[0],
       fecha_emision: new Date().toISOString().split('T')[0],
@@ -2930,6 +3000,16 @@ export default function PTRSSystem() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📝 Notas</label>
+                <textarea 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  rows="2"
+                  value={form.notas} 
+                  onChange={(e) => setForm({...form, notas: e.target.value})} 
+                  placeholder="Notas adicionales sobre esta factura..."
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
@@ -3173,6 +3253,7 @@ export default function PTRSSystem() {
       numero: f.numero || '',
       monto: f.monto || '',
       concepto: f.concepto || '',
+      notas: f.notas || '',
       anios_apelacion: f.anios_apelacion || '',
       fecha_factura: f.fecha_factura || '',
       estado: f.estado || 'pendiente'
@@ -3350,6 +3431,16 @@ export default function PTRSSystem() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.concepto} onChange={(e) => setForm({...form, concepto: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📝 Notas</label>
+                <textarea 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  rows="2"
+                  value={form.notas} 
+                  onChange={(e) => setForm({...form, notas: e.target.value})} 
+                  placeholder="Notas adicionales sobre esta factura..."
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
