@@ -1871,29 +1871,42 @@ export default function PTRSSystem() {
                               📍 {f.propiedades_factura.length} {f.propiedades_factura.length === 1 ? 'propiedad' : 'propiedades'}:
                             </p>
                             <div className="space-y-1 max-h-40 overflow-y-auto">
-                              {f.propiedades_factura.map((prop, idx) => (
-                                <div 
-                                  key={idx} 
-                                  className="flex items-center justify-between text-sm bg-white p-2 rounded border cursor-pointer hover:bg-blue-50"
-                                  onClick={() => { 
-                                    setPropiedadSeleccionada(prop); 
-                                    setPropiedadTab('documentos'); 
-                                    setModalActivo('expedientePropiedad'); 
-                                  }}
-                                >
-                                  <div className="flex items-center space-x-2">
-                                    <span className="text-xs text-gray-400 w-5">{prop.row_number || idx + 1}.</span>
-                                    <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
-                                    <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion || ''}</span>
+                              {f.propiedades_factura.map((prop, idx) => {
+                                // Colores por tipo de aplicación
+                                const appTypeColors = {
+                                  'TA': 'bg-blue-100 text-blue-700',
+                                  'HOE': 'bg-green-100 text-green-700',
+                                  'Sr': 'bg-purple-100 text-purple-700',
+                                  'SrF': 'bg-purple-100 text-purple-700',
+                                  'HE': 'bg-orange-100 text-orange-700',
+                                  'VET': 'bg-red-100 text-red-700',
+                                  'DIS': 'bg-yellow-100 text-yellow-700',
+                                  'LL': 'bg-gray-200 text-gray-700'
+                                };
+                                const appType = prop.application_type || 'TA';
+                                const colorClass = appTypeColors[appType] || 'bg-gray-100 text-gray-700';
+                                
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    className="flex items-center justify-between text-sm bg-white p-2 rounded border cursor-pointer hover:bg-blue-50"
+                                    onClick={() => { 
+                                      setPropiedadSeleccionada(prop); 
+                                      setPropiedadTab('documentos'); 
+                                      setModalActivo('expedientePropiedad'); 
+                                    }}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${colorClass}`}>{appType}</span>
+                                      <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
+                                      <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion || ''}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-sm text-green-600 font-semibold">${Number(prop.monto_individual || prop.monto || 0).toLocaleString()}</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center space-x-2">
-                                    {(prop.monto_individual || prop.monto) ? (
-                                      <span className="text-xs text-green-600 font-medium">${Number(prop.monto_individual || prop.monto || 0).toLocaleString()}</span>
-                                    ) : null}
-                                    <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{prop.application_type || 'TA'}</span>
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -2872,15 +2885,33 @@ export default function PTRSSystem() {
                   )}
                 </label>
                 
-                {/* Propiedades seleccionadas con monto */}
+                {/* Propiedades seleccionadas con monto y tipo */}
                 {propiedadesFactura.length > 0 && (
                   <div className="mb-3 space-y-2">
                     {propiedadesFactura.map((prop, idx) => (
                       <div key={prop.id || idx} className="flex items-center justify-between bg-blue-50 p-2 rounded text-sm">
                         <div className="flex items-center space-x-2 flex-1">
-                          <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                          <select
+                            className="w-16 border rounded px-1 py-1 text-xs font-semibold bg-white"
+                            value={prop.application_type || 'TA'}
+                            onChange={(e) => {
+                              const updated = propiedadesFactura.map((p, i) => 
+                                i === idx ? {...p, application_type: e.target.value} : p
+                              );
+                              setPropiedadesFactura(updated);
+                            }}
+                          >
+                            <option value="TA">TA</option>
+                            <option value="HOE">HOE</option>
+                            <option value="Sr">Sr</option>
+                            <option value="SrF">SrF</option>
+                            <option value="HE">HE</option>
+                            <option value="VET">VET</option>
+                            <option value="DIS">DIS</option>
+                            <option value="LL">LL</option>
+                          </select>
                           <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
-                          <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion}</span>
+                          <span className="text-gray-500 text-xs truncate max-w-[100px]">{prop.direccion}</span>
                         </div>
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">$</span>
@@ -3236,15 +3267,33 @@ export default function PTRSSystem() {
                   <p className="text-sm text-gray-500">Cargando propiedades...</p>
                 ) : (
                   <>
-                    {/* Propiedades seleccionadas con monto */}
+                    {/* Propiedades seleccionadas con monto y tipo */}
                     {propiedadesFactura.length > 0 && (
                       <div className="mb-3 space-y-2">
                         {propiedadesFactura.map((prop, idx) => (
                           <div key={prop.id || idx} className="flex items-center justify-between bg-blue-50 p-2 rounded text-sm">
                             <div className="flex items-center space-x-2 flex-1">
-                              <span className="text-xs text-gray-400 w-4">{idx + 1}.</span>
+                              <select
+                                className="w-16 border rounded px-1 py-1 text-xs font-semibold bg-white"
+                                value={prop.application_type || 'TA'}
+                                onChange={(e) => {
+                                  const updated = propiedadesFactura.map((p, i) => 
+                                    i === idx ? {...p, application_type: e.target.value} : p
+                                  );
+                                  setPropiedadesFactura(updated);
+                                }}
+                              >
+                                <option value="TA">TA</option>
+                                <option value="HOE">HOE</option>
+                                <option value="Sr">Sr</option>
+                                <option value="SrF">SrF</option>
+                                <option value="HE">HE</option>
+                                <option value="VET">VET</option>
+                                <option value="DIS">DIS</option>
+                                <option value="LL">LL</option>
+                              </select>
                               <span className="font-mono text-blue-600 text-xs">{prop.pin}</span>
-                              <span className="text-gray-500 text-xs truncate max-w-[120px]">{prop.direccion}</span>
+                              <span className="text-gray-500 text-xs truncate max-w-[100px]">{prop.direccion}</span>
                             </div>
                             <div className="flex items-center space-x-2">
                               <span className="text-xs text-gray-500">$</span>
