@@ -3120,9 +3120,12 @@ export default function PTRSSystem() {
           try {
             const res = await api('factura_propiedad?factura_id=eq.' + f.id + '&select=*,propiedad:propiedades(*)', { token });
             const data = await res.json();
+            console.log('Propiedades cargadas de DB:', data);
             setPropiedadesFactura(data.map((fp, idx) => ({
-              ...fp.propiedad, 
-              lineaId: fp.id || Date.now() + idx, // Usar ID de factura_propiedad como lineaId
+              ...fp.propiedad,
+              id: fp.propiedad.id, // ID de la propiedad
+              propiedad_id: fp.propiedad_id, // También guardar propiedad_id
+              lineaId: fp.id || Date.now() + idx, // ID de la línea factura_propiedad
               row_number: fp.row_number, 
               application_type: fp.application_type,
               monto_individual: fp.monto || ''
@@ -3131,6 +3134,12 @@ export default function PTRSSystem() {
             console.error('Error cargando propiedades:', e);
           }
           setLoadingProps(false);
+        } else if (f.propiedades_factura) {
+          // Si ya vienen las propiedades, asegurarnos que tengan lineaId
+          setPropiedadesFactura(f.propiedades_factura.map((p, idx) => ({
+            ...p,
+            lineaId: p.lineaId || Date.now() + idx
+          })));
         }
       };
       cargarPropiedades();
@@ -3175,19 +3184,34 @@ export default function PTRSSystem() {
         await api('factura_propiedad?factura_id=eq.' + f.id, { method: 'DELETE', token });
         
         // Luego crear las nuevas con monto individual
+        console.log('Propiedades a guardar:', propiedadesFactura);
+        
         for (let i = 0; i < propiedadesFactura.length; i++) {
           const prop = propiedadesFactura[i];
-          await api('factura_propiedad', {
+          const propiedadId = prop.propiedad_id || prop.id; // Usar propiedad_id si existe, sino id
+          
+          console.log(`Guardando linea ${i}:`, { prop_id: propiedadId, app_type: prop.application_type, monto: prop.monto_individual });
+          
+          if (!propiedadId) {
+            console.error('Error: propiedad sin ID', prop);
+            continue;
+          }
+          
+          const fpRes = await api('factura_propiedad', {
             method: 'POST',
             body: {
               factura_id: f.id,
-              propiedad_id: prop.id,
+              propiedad_id: propiedadId,
               row_number: i + 1,
               application_type: prop.application_type || 'TA',
               monto: parseFloat(prop.monto_individual) || 0
             },
             token
           });
+          
+          if (!fpRes.ok) {
+            console.error('Error guardando factura_propiedad:', await fpRes.text());
+          }
         }
         
         notify('Factura actualizada');
