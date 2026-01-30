@@ -822,14 +822,74 @@ export default function PTRSSystem() {
     setBuscandoDatosCondado(true);
     try {
       const pinLimpio = propiedad.pin.replace(/-/g, '');
-      const response = await fetch(`https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`);
-      const data = await response.json();
+      console.log('Buscando PIN:', pinLimpio);
       
-      if (data && data.length > 0) {
-        const info = data[0];
-        const direccion = info.property_address || info.addr || '';
-        const townshipNombre = info.township_name || info.township || '';
-        
+      let direccion = '';
+      let townshipNombre = '';
+      let ciudad = '';
+      let encontrado = false;
+      
+      // Intentar con la API principal del Assessor
+      try {
+        const response = await fetch(`https://datacatalog.cookcountyil.gov/resource/uzyt-m557.json?pin=${pinLimpio}`);
+        console.log('Respuesta API 1:', response.status);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Datos API 1:', data);
+          if (data && data.length > 0) {
+            const info = data[0];
+            direccion = info.property_address || info.addr || info.address || '';
+            townshipNombre = info.township_name || info.township || '';
+            ciudad = info.city || info.municipality || '';
+            encontrado = true;
+          }
+        }
+      } catch (e1) {
+        console.log('Error API 1:', e1);
+      }
+      
+      // Si no encontró, intentar con otra API
+      if (!encontrado) {
+        try {
+          const response2 = await fetch(`https://datacatalog.cookcountyil.gov/resource/c49d-89sn.json?pin=${pinLimpio}`);
+          console.log('Respuesta API 2:', response2.status);
+          if (response2.ok) {
+            const data2 = await response2.json();
+            console.log('Datos API 2:', data2);
+            if (data2 && data2.length > 0) {
+              const info = data2[0];
+              direccion = info.property_address || info.addr || info.address || info.prop_address || '';
+              townshipNombre = info.township_name || info.township || '';
+              ciudad = info.city || info.municipality || '';
+              encontrado = true;
+            }
+          }
+        } catch (e2) {
+          console.log('Error API 2:', e2);
+        }
+      }
+      
+      // Tercera opción - API de características de propiedades
+      if (!encontrado) {
+        try {
+          const response3 = await fetch(`https://datacatalog.cookcountyil.gov/resource/bcnq-qi2z.json?pin=${pinLimpio}`);
+          console.log('Respuesta API 3:', response3.status);
+          if (response3.ok) {
+            const data3 = await response3.json();
+            console.log('Datos API 3:', data3);
+            if (data3 && data3.length > 0) {
+              const info = data3[0];
+              direccion = info.property_address || info.addr || info.address || '';
+              townshipNombre = info.township_name || info.township || '';
+              encontrado = true;
+            }
+          }
+        } catch (e3) {
+          console.log('Error API 3:', e3);
+        }
+      }
+      
+      if (encontrado && (direccion || townshipNombre)) {
         // Buscar township en nuestra base de datos
         let townshipId = null;
         if (townshipNombre) {
@@ -845,37 +905,42 @@ export default function PTRSSystem() {
         // Actualizar propiedad
         const updateData = {};
         if (direccion) updateData.direccion = direccion;
+        if (ciudad) updateData.ciudad = ciudad;
         if (townshipId) updateData.township_id = townshipId;
         
         if (Object.keys(updateData).length > 0) {
-          await api(`propiedades?id=eq.${propiedad.id}`, {
+          const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
             method: 'PATCH',
             body: updateData,
             token
           });
           
-          // Actualizar en la UI
-          setPropiedadSeleccionada({...propiedad, ...updateData});
-          
-          // Recargar cliente para refrescar propiedades
-          if (clienteSeleccionado) {
-            const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
-            const clienteData = await res.json();
-            if (clienteData && clienteData[0]) {
-              setClienteSeleccionado(clienteData[0]);
+          if (updateRes.ok) {
+            // Actualizar en la UI
+            setPropiedadSeleccionada({...propiedad, ...updateData});
+            
+            // Recargar cliente para refrescar propiedades
+            if (clienteSeleccionado) {
+              const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+              const clienteData = await res.json();
+              if (clienteData && clienteData[0]) {
+                setClienteSeleccionado(clienteData[0]);
+              }
             }
+            
+            notify(`✅ Actualizado: ${direccion || 'Sin dirección'}${townshipNombre ? ' - ' + townshipNombre : ''}`);
+          } else {
+            notify('Error al guardar los datos', 'error');
           }
-          
-          notify(`Datos actualizados: ${direccion || 'Sin dirección'}`);
         } else {
-          notify('No se encontraron datos para este PIN', 'error');
+          notify('No se encontraron datos nuevos para este PIN', 'info');
         }
       } else {
-        notify('PIN no encontrado en el condado', 'error');
+        notify('PIN no encontrado en las bases de datos del condado', 'error');
       }
     } catch (e) {
       console.error('Error buscando datos del condado:', e);
-      notify('Error al consultar el condado', 'error');
+      notify('Error al consultar el condado: ' + e.message, 'error');
     }
     setBuscandoDatosCondado(false);
   };
