@@ -4778,9 +4778,20 @@ export default function PTRSSystem() {
       }
     };
 
-    const ciclosUnicos = [...new Set(pendientesData.map(p => p.ciclo_revaluacion))].sort();
-    const regionesUnicas = [...new Set(pendientesData.map(p => p.township_region))].filter(Boolean).sort();
-    const townshipsUnicos = [...new Set(pendientesData.map(p => p.township_nombre))].sort();
+    // CORRECCIÓN 1: Ciclos hardcodeados para los 3 ciclos de Cook County
+    // No depende de los datos existentes en BD
+    const CICLOS_COOK_COUNTY = [2023, 2024, 2025];
+
+    // CORRECCIÓN 2: Regiones hardcodeadas con labels amigables
+    const REGIONES_COOK_COUNTY = [
+      { value: 'south_west', label: 'South-West (Ciclo 2023)' },
+      { value: 'chicago', label: 'Chicago (Ciclo 2024)' },
+      { value: 'north', label: 'North (Ciclo 2025)' },
+    ];
+
+    // CORRECCIÓN 3: Townships cargados de la tabla completa (state "townships" ya existe en el componente padre)
+    // Ordenados alfabéticamente
+    const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
 
     const datosFiltrados = pendientesData.filter(p => {
       if (filtrosReporte.ciclo !== 'todos' && p.ciclo_revaluacion !== parseInt(filtrosReporte.ciclo)) return false;
@@ -4914,7 +4925,7 @@ export default function PTRSSystem() {
             <div className="text-sm text-gray-600">Total años faltantes</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
-            <div className="text-3xl font-bold text-green-600">{townshipsUnicos.length}</div>
+            <div className="text-3xl font-bold text-green-600">{todosLosTownships.length}</div>
             <div className="text-sm text-gray-600">Townships afectados</div>
           </div>
         </div>
@@ -4937,22 +4948,39 @@ export default function PTRSSystem() {
               </button>
             </div>
 
+            {/* CORRECCIÓN 1: Ciclos hardcodeados - siempre muestra 2023, 2024, 2025 */}
             <select value={filtrosReporte.ciclo} onChange={(e) => setFiltrosReporte({...filtrosReporte, ciclo: e.target.value})}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
               <option value="todos">Todos los ciclos</option>
-              {ciclosUnicos.map(c => <option key={c} value={c}>Ciclo {c}</option>)}
+              {CICLOS_COOK_COUNTY.map(c => (
+                <option key={c} value={c}>Ciclo {c}</option>
+              ))}
             </select>
 
-            <select value={filtrosReporte.region} onChange={(e) => setFiltrosReporte({...filtrosReporte, region: e.target.value})}
+            {/* CORRECCIÓN 2: Regiones hardcodeadas con multi-select */}
+            <select value={filtrosReporte.region} onChange={(e) => setFiltrosReporte({...filtrosReporte, region: e.target.value, township: 'todos'})}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
               <option value="todas">Todas las regiones</option>
-              {regionesUnicas.map(r => <option key={r} value={r}>{r}</option>)}
+              {REGIONES_COOK_COUNTY.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
             </select>
 
+            {/* CORRECCIÓN 3: Townships de la tabla completa, filtrados por región si se seleccionó una */}
             <select value={filtrosReporte.township} onChange={(e) => setFiltrosReporte({...filtrosReporte, township: e.target.value})}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
               <option value="todos">Todos los townships</option>
-              {townshipsUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+              {todosLosTownships
+                .filter(t => {
+                  // Si hay región seleccionada, mostrar solo los townships de esa región
+                  if (filtrosReporte.region !== 'todas') {
+                    return t.region === filtrosReporte.region;
+                  }
+                  return true;
+                })
+                .map(t => (
+                  <option key={t.id} value={t.nombre}>{t.nombre}</option>
+                ))}
             </select>
 
             <button onClick={exportarCSV} className="ml-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
@@ -5050,11 +5078,23 @@ export default function PTRSSystem() {
           </div>
         )}
 
-        {/* Vista por Township */}
+        {/* Vista por Township - CORRECCIÓN 4: tarjetas clickeables */}
         {vistaReporte === 'township' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {resumenTownship.map((t, idx) => (
-              <div key={t.township_nombre + '-' + idx} className={'bg-white rounded-lg shadow p-4 ' + getColorRegion(t.region)}>
+            {resumenTownship.length > 0 ? resumenTownship.map((t, idx) => (
+              // CORRECCIÓN 4: onClick para navegar a la vista detalle filtrada por este township
+              <div
+                key={t.township_nombre + '-' + idx}
+                className={'bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-150 ' + getColorRegion(t.region)}
+                onClick={() => {
+                  setFiltrosReporte({
+                    ciclo: t.ciclo ? String(t.ciclo) : 'todos',
+                    region: t.region || 'todas',
+                    township: t.township_nombre || 'todos'
+                  });
+                  setVistaReporte('detalle');
+                }}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-bold text-gray-800">{t.township_nombre}</h3>
                   <span className={'px-2 py-1 rounded text-xs font-medium ' + getColorCiclo(t.ciclo)}>Ciclo {t.ciclo}</span>
@@ -5070,15 +5110,58 @@ export default function PTRSSystem() {
                     <div className="text-xs text-gray-500">Propiedades</div>
                   </div>
                 </div>
+                <div className="mt-3 text-xs text-blue-600 font-medium text-right">
+                  Ver detalle →
+                </div>
               </div>
-            ))}
+            )) : (
+              // Si el RPC no devuelve datos, mostrar los townships de la tabla con datos de pendientesData
+              todosLosTownships.map((t, idx) => {
+                const pendientesTwp = pendientesData.filter(p => p.township_nombre === t.nombre);
+                if (pendientesTwp.length === 0) return null;
+                const clientesUnicos = new Set(pendientesTwp.map(p => p.cliente_id)).size;
+                return (
+                  <div
+                    key={t.id + '-' + idx}
+                    className={'bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-150 ' + getColorRegion(t.region)}
+                    onClick={() => {
+                      setFiltrosReporte({
+                        ciclo: 'todos',
+                        region: t.region || 'todas',
+                        township: t.nombre
+                      });
+                      setVistaReporte('detalle');
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-gray-800">{t.nombre}</h3>
+                      <span className={'px-2 py-1 rounded text-xs font-medium ' + getColorCiclo(t.ciclo_revaluacion)}>Ciclo {t.ciclo_revaluacion}</span>
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">{t.region}</div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-white bg-opacity-50 rounded p-2">
+                        <div className="text-2xl font-bold text-blue-600">{clientesUnicos}</div>
+                        <div className="text-xs text-gray-500">Clientes</div>
+                      </div>
+                      <div className="bg-white bg-opacity-50 rounded p-2">
+                        <div className="text-2xl font-bold text-orange-600">{pendientesTwp.length}</div>
+                        <div className="text-xs text-gray-500">Propiedades</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-xs text-blue-600 font-medium text-right">
+                      Ver detalle →
+                    </div>
+                  </div>
+                );
+              }).filter(Boolean)
+            )}
           </div>
         )}
 
         {/* Vista por Región */}
         {vistaReporte === 'region' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {resumenRegion.map((r, idx) => (
+            {resumenRegion.length > 0 ? resumenRegion.map((r, idx) => (
               <div key={r.region + '-' + r.ciclo + '-' + idx} className={'bg-white rounded-lg shadow-lg p-6 ' + getColorRegion(r.region)}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-bold text-gray-800">{r.region}</h3>
@@ -5103,7 +5186,44 @@ export default function PTRSSystem() {
                   <div className="text-sm text-gray-500">Años del trienio: <strong>{r.ciclo}, {r.ciclo + 1}, {r.ciclo + 2}</strong></div>
                 </div>
               </div>
-            ))}
+            )) : (
+              // Fallback: mostrar resumen calculado de los datos disponibles
+              REGIONES_COOK_COUNTY.map((region, idx) => {
+                const datoRegion = pendientesData.filter(p => p.township_region === region.value);
+                if (datoRegion.length === 0) return null;
+                const clientesRegion = new Set(datoRegion.map(p => p.cliente_id)).size;
+                const townshipsRegion = new Set(datoRegion.map(p => p.township_nombre)).size;
+                const cicloRegion = datoRegion[0]?.ciclo_revaluacion;
+                return (
+                  <div key={region.value + '-' + idx} className={'bg-white rounded-lg shadow-lg p-6 ' + getColorRegion(region.value)}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold text-gray-800">{region.value}</h3>
+                      {cicloRegion && <span className={'px-3 py-1 rounded-full text-sm font-medium ' + getColorCiclo(cicloRegion)}>Ciclo {cicloRegion}</span>}
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                        <span className="text-gray-600">Townships afectados</span>
+                        <span className="text-2xl font-bold text-purple-600">{townshipsRegion}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                        <span className="text-gray-600">Total clientes</span>
+                        <span className="text-2xl font-bold text-blue-600">{clientesRegion}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
+                        <span className="text-gray-600">Total propiedades</span>
+                        <span className="text-2xl font-bold text-orange-600">{datoRegion.length}</span>
+                      </div>
+                    </div>
+                    {cicloRegion && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="text-sm text-gray-500">Próxima revaluación: <strong>{cicloRegion + 3}</strong></div>
+                        <div className="text-sm text-gray-500">Años del trienio: <strong>{cicloRegion}, {cicloRegion + 1}, {cicloRegion + 2}</strong></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              }).filter(Boolean)
+            )}
           </div>
         )}
 
@@ -5113,15 +5233,15 @@ export default function PTRSSystem() {
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-2">
               <span className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></span>
-              <span>Ciclo 2023 (South-West)</span>
+              <span>Ciclo 2023 (South-West) — Próx. revaluación 2026</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></span>
-              <span>Ciclo 2024 (Chicago)</span>
+              <span>Ciclo 2024 (Chicago) — Próx. revaluación 2027</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
-              <span>Ciclo 2025 (North)</span>
+              <span>Ciclo 2025 (North) — Próx. revaluación 2028</span>
             </div>
             <span className="text-gray-400">|</span>
             <div className="flex items-center gap-2">
@@ -5141,6 +5261,7 @@ export default function PTRSSystem() {
       </div>
     );
   };
+
 
   // Render current view
   const renderView = () => {
