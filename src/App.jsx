@@ -9,12 +9,13 @@ var api = async function(endpoint, options) {
   var method = options.method || 'GET';
   var body = options.body;
   var token = options.token;
-  var headers = {
+  var extraHeaders = options.headers || {};
+  var headers = Object.assign({
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
     'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
-  };
+  }, extraHeaders);
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
   var res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, config);
@@ -4758,7 +4759,7 @@ export default function PTRSSystem() {
       
       try {
         const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
           api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
           api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
         ]);
