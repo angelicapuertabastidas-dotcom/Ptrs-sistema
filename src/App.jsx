@@ -9,13 +9,12 @@ var api = async function(endpoint, options) {
   var method = options.method || 'GET';
   var body = options.body;
   var token = options.token;
-  var extraHeaders = options.headers || {};
-  var headers = Object.assign({
+  var headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
     'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
-  }, extraHeaders);
+  };
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
   var res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, config);
@@ -4759,7 +4758,7 @@ export default function PTRSSystem() {
       
       try {
         const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
           api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
           api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
         ]);
@@ -4781,7 +4780,7 @@ export default function PTRSSystem() {
 
     // CORRECCIÓN 1: Ciclos hardcodeados para los 3 ciclos de Cook County
     // No depende de los datos existentes en BD
-    const CICLOS_COOK_COUNTY = [2023, 2024, 2025];
+    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
 
     // CORRECCIÓN 2: Regiones hardcodeadas con labels amigables
     const REGIONES_COOK_COUNTY = [
@@ -5243,6 +5242,19 @@ export default function PTRSSystem() {
             <div className="flex items-center gap-2">
               <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
               <span>Ciclo 2025 (North) — Próx. revaluación 2028</span>
+            </div>
+            <span className="text-gray-400">|</span>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></span>
+              <span>Ciclo 2026 (South-West) — Próx. revaluación 2029</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></span>
+              <span>Ciclo 2027 (Chicago) — Próx. revaluación 2030</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
+              <span>Ciclo 2028 (North) — Próx. revaluación 2031</span>
             </div>
             <span className="text-gray-400">|</span>
             <div className="flex items-center gap-2">
