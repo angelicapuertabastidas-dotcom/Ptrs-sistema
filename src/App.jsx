@@ -1616,7 +1616,7 @@ export default function PTRSSystem() {
                   <div>
                     <p className="font-semibold text-gray-900">{cliente.nombre} {cliente.apellido}</p>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
-                      {cliente.numero_ptrs && <span className="text-green-600 font-medium">{cliente.numero_ptrs}</span>}
+                      {(cliente.numero_cliente || cliente.numero_ptrs) && <span className="text-green-600 font-medium">{cliente.numero_cliente || cliente.numero_ptrs}</span>}
                       {cliente.telefono_principal && <span>📞 {cliente.telefono_principal}</span>}
                       <span>🏠 {cliente.propiedades?.length || 0} prop.</span>
                     </div>
@@ -1719,7 +1719,7 @@ export default function PTRSSystem() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{cliente.nombre} {cliente.apellido}</h1>
                 <div className="flex items-center space-x-3 mt-1 text-sm text-gray-500">
-                  {cliente.numero_ptrs && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">{cliente.numero_ptrs}</span>}
+                  {(cliente.numero_cliente || cliente.numero_ptrs) && <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">{cliente.numero_cliente || cliente.numero_ptrs}</span>}
                   <span className={`px-2 py-0.5 rounded ${cliente.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{cliente.estado || 'activo'}</span>
                 </div>
               </div>
@@ -1769,6 +1769,7 @@ export default function PTRSSystem() {
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-4">Sistema</h3>
                   <div className="space-y-2 text-sm">
+                    <p><span className="text-gray-500">Número PTRS:</span> <span className="font-medium text-green-700">{cliente.numero_cliente || 'Sin asignar'}</span></p>
                     <p><span className="text-gray-500">Customer #:</span> <span className="font-medium">{cliente.customer_number || 'N/A'}</span></p>
                     <p><span className="text-gray-500">Work Order #:</span> <span className="font-medium">{cliente.work_order_number || 'N/A'}</span></p>
                   </div>
@@ -2000,6 +2001,11 @@ export default function PTRSSystem() {
                             {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
                           </span>
                           <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
+                          {f.anio_fiscal && (
+                            <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">
+                              🗓️ Año Fiscal: {f.anio_fiscal}
+                            </span>
+                          )}
                           {f.anios_apelacion && (
                             <span className="bg-purple-100 text-purple-700 text-xs font-medium px-2 py-1 rounded">
                               📅 {f.anios_apelacion}
@@ -2907,6 +2913,7 @@ export default function PTRSSystem() {
       concepto: '',
       notas: '',
       anios_apelacion: '',
+      anio_fiscal: '',
       fecha_factura: new Date().toISOString().split('T')[0],
       fecha_emision: new Date().toISOString().split('T')[0],
       estado: 'pendiente'
@@ -2945,7 +2952,7 @@ export default function PTRSSystem() {
         // Crear la factura
         const res = await api('facturas', { 
           method: 'POST', 
-          body: {...form, monto: parseFloat(form.monto) || 0}, 
+          body: {...form, monto: parseFloat(form.monto) || 0, anio_fiscal: form.anio_fiscal ? parseInt(form.anio_fiscal) : null}, 
           token 
         });
         if (!res.ok) throw new Error('Error al guardar');
@@ -3042,6 +3049,16 @@ export default function PTRSSystem() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
                 <p className="text-xs text-gray-500 mt-1">Años fiscales que cubre esta factura</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🗓️ Año Fiscal Principal *</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.anio_fiscal} onChange={(e) => setForm({...form, anio_fiscal: e.target.value})}>
+                  <option value="">-- Seleccionar año fiscal --</option>
+                  {[2026,2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015,2014,2013,2012].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Año de revaluación al que corresponde (no la fecha de pago)</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -3282,6 +3299,7 @@ export default function PTRSSystem() {
       concepto: f.concepto || '',
       notas: f.notas || '',
       anios_apelacion: f.anios_apelacion || '',
+      anio_fiscal: f.anio_fiscal || '',
       fecha_factura: f.fecha_factura || '',
       estado: f.estado || 'pendiente'
     });
@@ -3472,6 +3490,16 @@ export default function PTRSSystem() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">📅 Años de Apelación</label>
                 <input className="w-full border rounded-lg px-3 py-2" value={form.anios_apelacion} onChange={(e) => setForm({...form, anios_apelacion: e.target.value})} placeholder="Ej: 2022 2023 2024" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🗓️ Año Fiscal Principal *</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={form.anio_fiscal} onChange={(e) => setForm({...form, anio_fiscal: e.target.value})}>
+                  <option value="">-- Seleccionar año fiscal --</option>
+                  {[2026,2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015,2014,2013,2012].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Año de revaluación al que corresponde (no la fecha de pago)</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
