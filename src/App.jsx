@@ -4793,8 +4793,15 @@ export default function PTRSSystem() {
     // Ordenados alfabéticamente
     const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
 
+    // Mapa ciclos futuros a ciclo base en BD (2026=SW=2023, 2027=Chicago=2024, 2028=North=2025)
+    const CICLO_FUTURO_A_BASE = { 2026: 2023, 2027: 2024, 2028: 2025 };
+
     const datosFiltrados = pendientesData.filter(p => {
-      if (filtrosReporte.ciclo !== 'todos' && p.ciclo_revaluacion !== parseInt(filtrosReporte.ciclo)) return false;
+      if (filtrosReporte.ciclo !== 'todos') {
+        const cicloSeleccionado = parseInt(filtrosReporte.ciclo);
+        const cicloBase = CICLO_FUTURO_A_BASE[cicloSeleccionado] || cicloSeleccionado;
+        if (p.ciclo_revaluacion !== cicloBase) return false;
+      }
       if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
       if (filtrosReporte.township !== 'todos' && p.township_nombre !== filtrosReporte.township) return false;
       return true;
