@@ -446,20 +446,27 @@ export default function PTRSSystem() {
           setApelaciones(await apelRes.json() || []);
           setContactosCliente(await contactosRes.json() || []);
           
-          // Cargar facturas CON sus propiedades desde factura_propiedad
-          const facturasRes = await api(`facturas?cliente_id=eq.${clienteSeleccionado.id}&order=created_at.desc`, { token });
-          const facturasData = await facturasRes.json() || [];
+          // Cargar facturas usando RPC que busca por cliente_id Y por PINs del cliente
+          const facturasRpc = await api('rpc/get_facturas_cliente', {
+            method: 'POST',
+            body: { p_cliente_id: clienteSeleccionado.id },
+            token,
+            headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
+          });
+          const facturasData = await facturasRpc.json() || [];
           
+          // Para cada factura cargar sus propiedades
           const facturasConPropiedades = await Promise.all(
             facturasData.map(async (factura) => {
               try {
                 const fpRes = await api(
-                  `factura_propiedad?factura_id=eq.${factura.id}&select=*,propiedad:propiedades(id,pin,direccion,township_id)&order=row_number.asc`,
+                  `factura_propiedad?factura_id=eq.${factura.factura_id}&select=*,propiedad:propiedades(id,pin,direccion,township_id)&order=row_number.asc`,
                   { token }
                 );
                 const fpData = await fpRes.json() || [];
                 return {
                   ...factura,
+                  id: factura.factura_id,
                   propiedades_factura: fpData.map(fp => ({
                     ...fp.propiedad,
                     row_number: fp.row_number,
@@ -468,7 +475,7 @@ export default function PTRSSystem() {
                   }))
                 };
               } catch (e) {
-                return { ...factura, propiedades_factura: [] };
+                return { ...factura, id: factura.factura_id, propiedades_factura: [] };
               }
             })
           );
@@ -1296,6 +1303,7 @@ export default function PTRSSystem() {
         <NavItem icon="calendar" label="Corte Semanal" vista="corte" />
         <NavItem icon="file" label="Plantillas" vista="plantillas" />
         <NavItem icon="users" label="Pendientes Trienio" vista="reportePendientes" />
+        <NavItem icon="merge" label="Posibles Duplicados" vista="duplicados" />
         <div className="mt-8 pt-4 border-t border-slate-700">
           <NavItem icon="settings" label="Configuración" vista="config" />
         </div>
@@ -2001,6 +2009,11 @@ export default function PTRSSystem() {
                             {f.fecha_factura ? new Date(f.fecha_factura + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) : 'Sin fecha'}
                           </span>
                           <span className="font-medium text-gray-900">WO #{f.work_order_number || f.numero || '—'}</span>
+                          {f.origen === 'por_pin' && (
+                            <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded font-medium">
+                              📌 Factura por PIN
+                            </span>
+                          )}
                           {f.anio_fiscal && (
                             <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">
                               🗓️ Año Fiscal: {f.anio_fiscal}
@@ -4762,6 +4775,163 @@ export default function PTRSSystem() {
     );
   };
 
+
+  // ========== DETECTOR DE DUPLICADOS POR PIN ==========
+  const DetectorDuplicados = () => {
+    const [duplicados, setDuplicados] = useState([]);
+    const [loadingDup, setLoadingDup] = useState(false);
+    const [paginaDup, setPaginaDup] = useState(0);
+    const [totalDup, setTotalDup] = useState(0);
+    const DUP_POR_PAGINA = 20;
+
+    useEffect(() => {
+      cargarDuplicados();
+    }, []);
+
+    const cargarDuplicados = async () => {
+      setLoadingDup(true);
+      try {
+        // Buscar PINs que aparecen en más de un cliente
+        const res = await api('rpc/detectar_duplicados_por_pin', {
+          method: 'POST',
+          body: {},
+          token,
+          headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setDuplicados(data);
+          setTotalDup(data.length);
+        }
+      } catch (e) {
+        console.error('Error cargando duplicados:', e);
+      }
+      setLoadingDup(false);
+    };
+
+    const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
+    const totalPags = Math.ceil(totalDup / DUP_POR_PAGINA);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
+            <p className="text-gray-500 mt-1">Clientes que comparten PINs — revisa y fusiona si corresponde</p>
+          </div>
+          <button
+            onClick={cargarDuplicados}
+            disabled={loadingDup}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loadingDup ? 'Buscando...' : '🔄 Actualizar'}
+          </button>
+        </div>
+
+        {/* Resumen */}
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <p className="text-orange-800 font-medium">
+            ⚠️ Se encontraron <strong>{totalDup}</strong> PINs compartidos entre clientes diferentes.
+            Esto puede indicar duplicados, cambios de nombre o propiedades que pasaron a otra persona.
+          </p>
+        </div>
+
+        {loadingDup ? (
+          <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+            <p className="text-gray-500">Buscando duplicados...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {paginados.map((dup, idx) => (
+              <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="p-4 bg-orange-50 border-b border-orange-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
+                      <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
+                    </div>
+                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
+                      {dup.cantidad_clientes} clientes
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y">
+                  {(dup.clientes || []).map((c, cidx) => (
+                    <div key={cidx} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
+                          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                            {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
+                            {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
+                            {c.customer_number && <span>Customer: {c.customer_number}</span>}
+                            <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
+                            setClienteSeleccionado(clienteObj);
+                            setVistaActual('expediente');
+                          }}
+                          className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50"
+                        >
+                          Ver expediente
+                        </button>
+                        <button
+                          onClick={() => {
+                            setModalActivo('mergeClientes');
+                          }}
+                          className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50"
+                        >
+                          Fusionar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* Paginación */}
+            {totalPags > 1 && (
+              <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border p-4">
+                <button
+                  onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
+                  disabled={paginaDup === 0}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
+                >
+                  ← Anterior
+                </button>
+                <span className="text-sm text-gray-500">
+                  Página {paginaDup + 1} de {totalPags} ({totalDup} PINs compartidos)
+                </span>
+                <button
+                  onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
+                  disabled={paginaDup >= totalPags - 1}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
+                >
+                  Siguiente →
+                </button>
+              </div>
+            )}
+
+            {duplicados.length === 0 && !loadingDup && (
+              <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+                <p className="text-green-600 font-medium">✅ No se encontraron PINs compartidos entre clientes.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ========== REPORTE CLIENTES PENDIENTES POR TRIENIO ==========
   const ReportePendientesTrienio = () => {
     const [pendientesData, setPendientesData] = useState([]);
@@ -5323,6 +5493,7 @@ export default function PTRSSystem() {
       case 'corte': return <CorteSemanal />;
       case 'plantillas': return <Plantillas />;
       case 'reportePendientes': return <ReportePendientesTrienio />;
+      case 'duplicados': return <DetectorDuplicados />;
       case 'config': return <Configuracion />;
       default: return <Dashboard />;
     }
