@@ -1026,8 +1026,8 @@ export default function PTRSSystem() {
     setSaving(false);
   };
 
-  const mergeClientes = async (clienteOrigen, clienteDestino) => {
-    setSaving(true);
+  const mergeClientes = async (clienteOrigen, clienteDestino, silent = false) => {
+    if (!silent) setSaving(true);
     try {
       var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
       nombreCompleto = nombreCompleto.trim();
@@ -1161,15 +1161,18 @@ export default function PTRSSystem() {
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
-      notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
-      setModalActivo(null);
-      setClienteParaMerge(null);
-      loadClientes(busqueda, paginaActual);
-      loadStats();
+      if (!silent) {
+        notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
+        setModalActivo(null);
+        setClienteParaMerge(null);
+        loadClientes(busqueda, paginaActual);
+        loadStats();
+      }
     } catch (e) {
-      notify('Error al fusionar clientes', 'error');
+      if (!silent) notify('Error al fusionar clientes', 'error');
+      else throw e; // re-throw para que el loop masivo lo capture
     }
-    setSaving(false);
+    if (!silent) setSaving(false);
   };
 
   const deleteCliente = async (cliente) => {
@@ -4782,48 +4785,134 @@ export default function PTRSSystem() {
     const [loadingDup, setLoadingDup] = useState(false);
     const [paginaDup, setPaginaDup] = useState(0);
     const [totalDup, setTotalDup] = useState(0);
+    const [gruposSeleccionados, setGruposSeleccionados] = useState(new Set());
+    const [mergeEnProgreso, setMergeEnProgreso] = useState(false);
+    const [progreso, setProgreso] = useState({ actual: 0, total: 0, log: [], errores: 0 });
+    const [resultadoFinal, setResultadoFinal] = useState(null);
     const DUP_POR_PAGINA = 20;
 
-    useEffect(() => {
-      cargarDuplicados();
-    }, []);
+    useEffect(() => { cargarDuplicados(); }, []);
 
     const cargarDuplicados = async () => {
       setLoadingDup(true);
+      setGruposSeleccionados(new Set());
+      setResultadoFinal(null);
       try {
-        // Buscar PINs que aparecen en más de un cliente
         const res = await api('rpc/detectar_duplicados_por_pin', {
-          method: 'POST',
-          body: {},
-          token,
+          method: 'POST', body: {}, token,
           headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
         });
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setDuplicados(data);
-          setTotalDup(data.length);
-        }
-      } catch (e) {
-        console.error('Error cargando duplicados:', e);
-      }
+        if (Array.isArray(data)) { setDuplicados(data); setTotalDup(data.length); }
+      } catch (e) { console.error('Error cargando duplicados:', e); }
       setLoadingDup(false);
+    };
+
+    // Auto-seleccionar el mejor destino: más propiedades > más facturas > PTRS # más bajo
+    const elegirDestino = (clientes) => {
+      return [...clientes].sort((a, b) => {
+        if (b.total_propiedades !== a.total_propiedades) return b.total_propiedades - a.total_propiedades;
+        if (b.total_facturas !== a.total_facturas) return b.total_facturas - a.total_facturas;
+        const numA = parseInt((a.numero_cliente || '').replace(/\D/g, '')) || 99999;
+        const numB = parseInt((b.numero_cliente || '').replace(/\D/g, '')) || 99999;
+        return numA - numB;
+      })[0];
+    };
+
+    const toggleGrupo = (pin) => {
+      setGruposSeleccionados(prev => {
+        const next = new Set(prev);
+        if (next.has(pin)) next.delete(pin); else next.add(pin);
+        return next;
+      });
+    };
+
+    const seleccionarTodosEnPagina = () => {
+      const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
+      setGruposSeleccionados(prev => {
+        const next = new Set(prev);
+        paginados.forEach(d => next.add(d.pin));
+        return next;
+      });
+    };
+
+    const deseleccionarTodos = () => setGruposSeleccionados(new Set());
+
+    const ejecutarMergeMasivo = async () => {
+      const gruposParaMerge = duplicados.filter(d => gruposSeleccionados.has(d.pin));
+      if (gruposParaMerge.length === 0) return;
+
+      const confirmado = window.confirm(
+        `¿Fusionar ${gruposParaMerge.length} grupos?\n\nEl sistema elegirá automáticamente el cliente principal (el que tenga más propiedades). Esta acción no se puede deshacer.`
+      );
+      if (!confirmado) return;
+
+      setMergeEnProgreso(true);
+      setResultadoFinal(null);
+      let exitosos = 0, errores = 0;
+      const logEntradas = [];
+
+      setProgreso({ actual: 0, total: gruposParaMerge.length, log: [], errores: 0 });
+
+      for (let i = 0; i < gruposParaMerge.length; i++) {
+        const grupo = gruposParaMerge[i];
+        const clientes = grupo.clientes || [];
+        if (clientes.length < 2) continue;
+
+        const destino = elegirDestino(clientes);
+        const origenes = clientes.filter(c => c.cliente_id !== destino.cliente_id);
+
+        try {
+          for (const origen of origenes) {
+            const clienteOrigenObj = {
+              id: origen.cliente_id,
+              nombre: origen.nombre,
+              apellido: origen.apellido,
+              telefono_principal: origen.telefono_principal,
+              customer_number: origen.customer_number,
+              work_order_number: origen.work_order_number,
+              email: origen.email,
+              direccion_correspondencia: origen.direccion_correspondencia,
+              numero_cliente: origen.numero_cliente
+            };
+            const clienteDestinoObj = {
+              id: destino.cliente_id,
+              nombre: destino.nombre,
+              apellido: destino.apellido,
+              numero_cliente: destino.numero_cliente
+            };
+            await mergeClientes(clienteOrigenObj, clienteDestinoObj, true);
+          }
+          exitosos++;
+          logEntradas.push({ tipo: 'ok', msg: `✅ ${destino.nombre} ${destino.apellido} (${destino.numero_cliente}) — ${origenes.length} fusionado(s)` });
+        } catch (e) {
+          errores++;
+          logEntradas.push({ tipo: 'err', msg: `❌ PIN ${grupo.pin} — ${e.message}` });
+        }
+
+        setProgreso({ actual: i + 1, total: gruposParaMerge.length, log: [...logEntradas], errores });
+      }
+
+      setResultadoFinal({ exitosos, errores, total: gruposParaMerge.length });
+      setMergeEnProgreso(false);
+      setGruposSeleccionados(new Set());
+      await cargarDuplicados();
     };
 
     const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
     const totalPags = Math.ceil(totalDup / DUP_POR_PAGINA);
+    const seleccionadosEnPagina = paginados.filter(d => gruposSeleccionados.has(d.pin)).length;
 
     return (
       <div className="space-y-6">
+        {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
             <p className="text-gray-500 mt-1">Clientes que comparten PINs — revisa y fusiona si corresponde</p>
           </div>
-          <button
-            onClick={cargarDuplicados}
-            disabled={loadingDup}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button onClick={cargarDuplicados} disabled={loadingDup || mergeEnProgreso}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {loadingDup ? 'Buscando...' : '🔄 Actualizar'}
           </button>
         </div>
@@ -4836,86 +4925,155 @@ export default function PTRSSystem() {
           </p>
         </div>
 
+        {/* Resultado final */}
+        {resultadoFinal && (
+          <div className={`rounded-xl p-4 border ${resultadoFinal.errores === 0 ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+            <p className={`font-bold text-lg ${resultadoFinal.errores === 0 ? 'text-green-800' : 'text-yellow-800'}`}>
+              {resultadoFinal.errores === 0 ? '✅' : '⚠️'} Merge completado: {resultadoFinal.exitosos} exitosos, {resultadoFinal.errores} errores de {resultadoFinal.total} grupos
+            </p>
+          </div>
+        )}
+
+        {/* Barra de progreso durante merge */}
+        {mergeEnProgreso && (
+          <div className="bg-white rounded-xl shadow-sm border p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-gray-900">Fusionando grupos... {progreso.actual}/{progreso.total}</p>
+              <span className="text-sm text-gray-500">{Math.round((progreso.actual / progreso.total) * 100)}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                style={{ width: `${(progreso.actual / progreso.total) * 100}%` }} />
+            </div>
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {progreso.log.slice(-8).map((entry, i) => (
+                <p key={i} className={`text-xs ${entry.tipo === 'ok' ? 'text-green-700' : 'text-red-600'}`}>{entry.msg}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Barra de acciones masivas */}
+        {!mergeEnProgreso && duplicados.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border p-4 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <button onClick={seleccionarTodosEnPagina}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                Seleccionar página ({DUP_POR_PAGINA})
+              </button>
+              {gruposSeleccionados.size > 0 && (
+                <button onClick={deseleccionarTodos}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                  Deseleccionar todos
+                </button>
+              )}
+              {gruposSeleccionados.size > 0 && (
+                <span className="text-sm text-blue-600 font-medium">{gruposSeleccionados.size} grupos seleccionados</span>
+              )}
+            </div>
+            {gruposSeleccionados.size > 0 && (
+              <button onClick={ejecutarMergeMasivo}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 flex items-center gap-2">
+                🔀 Fusionar {gruposSeleccionados.size} grupos seleccionados
+              </button>
+            )}
+          </div>
+        )}
+
         {loadingDup ? (
           <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
             <p className="text-gray-500">Buscando duplicados...</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {paginados.map((dup, idx) => (
-              <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="p-4 bg-orange-50 border-b border-orange-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
-                      <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
+            {paginados.map((dup, idx) => {
+              const seleccionado = gruposSeleccionados.has(dup.pin);
+              const destino = elegirDestino(dup.clientes || []);
+              return (
+                <div key={idx} className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all ${seleccionado ? 'ring-2 ring-orange-400' : ''}`}>
+                  <div className={`p-4 border-b flex items-center gap-3 ${seleccionado ? 'bg-orange-100 border-orange-300' : 'bg-orange-50 border-orange-200'}`}>
+                    {/* Checkbox */}
+                    <input type="checkbox" checked={seleccionado} onChange={() => toggleGrupo(dup.pin)}
+                      disabled={mergeEnProgreso}
+                      className="w-4 h-4 accent-orange-600 cursor-pointer flex-shrink-0" />
+                    <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
+                        <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
+                        {seleccionado && destino && (
+                          <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                            Principal: {destino.nombre} {destino.apellido} ({destino.numero_cliente})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
+                        {dup.cantidad_clientes} clientes
+                      </span>
                     </div>
-                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
-                      {dup.cantidad_clientes} clientes
-                    </span>
                   </div>
-                </div>
-                <div className="divide-y">
-                  {(dup.clientes || []).map((c, cidx) => (
-                    <div key={cidx} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
-                          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                            {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
-                            {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
-                            {c.customer_number && <span>Customer: {c.customer_number}</span>}
-                            <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
+                  <div className="divide-y">
+                    {(dup.clientes || []).map((c, cidx) => {
+                      const esDestino = seleccionado && destino && c.cliente_id === destino.cliente_id;
+                      return (
+                        <div key={cidx} className={`p-4 flex items-center justify-between hover:bg-gray-50 ${esDestino ? 'bg-blue-50' : ''}`}>
+                          <div className="flex items-center space-x-4">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${esDestino ? 'bg-blue-200' : 'bg-blue-100'}`}>
+                              <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
+                                {esDestino && <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">Principal</span>}
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
+                                {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
+                                {c.customer_number && <span>Customer: {c.customer_number}</span>}
+                                <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => {
+                                const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
+                                setClienteSeleccionado(clienteObj);
+                                setVistaActual('expediente');
+                              }}
+                              disabled={mergeEnProgreso}
+                              className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50 disabled:opacity-50">
+                              Ver expediente
+                            </button>
+                            <button
+                              onClick={() => setModalActivo('mergeClientes')}
+                              disabled={mergeEnProgreso}
+                              className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50 disabled:opacity-50">
+                              Fusionar
+                            </button>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
-                            setClienteSeleccionado(clienteObj);
-                            setVistaActual('expediente');
-                          }}
-                          className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50"
-                        >
-                          Ver expediente
-                        </button>
-                        <button
-                          onClick={() => {
-                            setModalActivo('mergeClientes');
-                          }}
-                          className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50"
-                        >
-                          Fusionar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Paginación */}
             {totalPags > 1 && (
               <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border p-4">
-                <button
-                  onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
-                  disabled={paginaDup === 0}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
-                >
+                <button onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
+                  disabled={paginaDup === 0 || mergeEnProgreso}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">
                   ← Anterior
                 </button>
                 <span className="text-sm text-gray-500">
-                  Página {paginaDup + 1} de {totalPags} ({totalDup} PINs compartidos)
+                  Página {paginaDup + 1} de {totalPags} · {totalDup} PINs compartidos
+                  {gruposSeleccionados.size > 0 && <span className="ml-2 text-orange-600 font-medium">· {gruposSeleccionados.size} seleccionados</span>}
                 </span>
-                <button
-                  onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
-                  disabled={paginaDup >= totalPags - 1}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
-                >
+                <button onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
+                  disabled={paginaDup >= totalPags - 1 || mergeEnProgreso}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">
                   Siguiente →
                 </button>
               </div>
