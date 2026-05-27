@@ -4849,14 +4849,17 @@ export default function PTRSSystem() {
       setLoadingDup(false);
     };
 
-    // Auto-seleccionar el mejor destino: más propiedades > más facturas > PTRS # más bajo
+    // El destino es siempre el cliente MÁS ANTIGUO
+    // Criterio: menor numero_cliente (PTRS-00001 es más antiguo que PTRS-00500)
+    // Si no tiene numero_cliente, usar el que tiene más propiedades como fallback
     const elegirDestino = (clientes) => {
       return [...clientes].sort((a, b) => {
-        if (b.total_propiedades !== a.total_propiedades) return b.total_propiedades - a.total_propiedades;
-        if (b.total_facturas !== a.total_facturas) return b.total_facturas - a.total_facturas;
         const numA = parseInt((a.numero_cliente || '').replace(/\D/g, '')) || 99999;
         const numB = parseInt((b.numero_cliente || '').replace(/\D/g, '')) || 99999;
-        return numA - numB;
+        // El número más bajo = más antiguo = es el destino
+        if (numA !== numB) return numA - numB;
+        // Tiebreak: más propiedades
+        return b.total_propiedades - a.total_propiedades;
       })[0];
     };
 
@@ -5043,7 +5046,7 @@ export default function PTRSSystem() {
                         <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
                         {seleccionado && destino && (
                           <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                            Principal: {destino.nombre} {destino.apellido} ({destino.numero_cliente})
+                            Principal (más antiguo): {destino.nombre} {destino.apellido} ({destino.numero_cliente})
                           </span>
                         )}
                       </div>
