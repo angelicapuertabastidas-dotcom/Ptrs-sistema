@@ -4867,22 +4867,34 @@ export default function PTRSSystem() {
     const [modoDup, setModoDup] = useState('nombre'); // 'pin' o 'nombre'
     const DUP_POR_PAGINA = 20;
 
-    useEffect(() => { cargarDuplicados(); }, [modoDup]);
+    useEffect(() => { cargarDuplicados(modoDup); }, [modoDup]);
 
-    const cargarDuplicados = async () => {
+    const cargarDuplicados = async (modo = modoDup) => {
       setLoadingDup(true);
       setGruposSeleccionados(new Set());
       setResultadoFinal(null);
       try {
-        const rpc = modoDup === 'pin' ? 'detectar_duplicados_por_pin' : 'detectar_duplicados_por_nombre_telefono';
-        const res = await api(`rpc/${rpc}`, {
-          method: 'POST', body: {}, token,
-          headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
+        const rpc = modo === 'pin' ? 'detectar_duplicados_por_pin' : 'detectar_duplicados_por_nombre_telefono';
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+            'Content-Type': 'application/json',
+            'Prefer': 'count=exact',
+            'Range-Unit': 'items',
+            'Range': '0-9999'
+          },
+          body: JSON.stringify({})
         });
         const data = await res.json();
         if (Array.isArray(data)) {
           setDuplicados(data);
           setTotalDup(data.length);
+        } else {
+          console.error('RPC error:', data);
+          setDuplicados([]);
+          setTotalDup(0);
         }
       } catch (e) { console.error('Error cargando duplicados:', e); }
       setLoadingDup(false);
@@ -4998,7 +5010,7 @@ export default function PTRSSystem() {
             <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
             <p className="text-gray-500 mt-1">Detecta y fusiona registros duplicados del mismo cliente</p>
           </div>
-          <button onClick={cargarDuplicados} disabled={loadingDup || mergeEnProgreso}
+          <button onClick={() => cargarDuplicados(modoDup)} disabled={loadingDup || mergeEnProgreso}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {loadingDup ? 'Buscando...' : '🔄 Actualizar'}
           </button>
