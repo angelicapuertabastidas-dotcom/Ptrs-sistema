@@ -5153,9 +5153,9 @@ export default function PTRSSystem() {
       
       try {
         const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
-          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
-          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
+          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
+          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } })
         ]);
 
         const pendientesResult = await resPendientes.json();
@@ -5173,28 +5173,44 @@ export default function PTRSSystem() {
       }
     };
 
-    // CORRECCIÓN 1: Ciclos hardcodeados para los 3 ciclos de Cook County
-    // No depende de los datos existentes en BD
-    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
+    // Calcula el ciclo activo de cada región según el año actual
+    // Cook County rota cada 3 años: SW=2023,2026,2029... Chicago=2024,2027... North=2025,2028...
+    const getCurrentCiclo = (baseYear) => {
+      const currentYear = new Date().getFullYear();
+      const elapsed = currentYear - baseYear;
+      return baseYear + Math.floor(elapsed / 3) * 3;
+    };
 
-    // CORRECCIÓN 2: Regiones hardcodeadas con labels amigables
+    const SW_CICLO     = getCurrentCiclo(2023); // 2026 en 2026, 2029 en 2029...
+    const CHI_CICLO    = getCurrentCiclo(2024); // 2024 en 2026, 2027 en 2027...
+    const NORTH_CICLO  = getCurrentCiclo(2025); // 2025 en 2026, 2028 en 2028...
+
+    // Los 6 ciclos cubiertos por el RPC (trienio actual + siguiente de cada región)
+    const CICLOS_COOK_COUNTY = [SW_CICLO, CHI_CICLO, NORTH_CICLO, SW_CICLO+3, CHI_CICLO+3, NORTH_CICLO+3];
+
+    // Regiones con el año de ciclo actual calculado dinámicamente
     const REGIONES_COOK_COUNTY = [
-      { value: 'south_west', label: 'South-West (Ciclo 2023)' },
-      { value: 'chicago', label: 'Chicago (Ciclo 2024)' },
-      { value: 'north', label: 'North (Ciclo 2025)' },
+      { value: 'south_west', label: `South-West (Ciclo ${SW_CICLO})`,  base: 2023 },
+      { value: 'chicago',    label: `Chicago (Ciclo ${CHI_CICLO})`,     base: 2024 },
+      { value: 'north',      label: `North (Ciclo ${NORTH_CICLO})`,     base: 2025 },
     ];
+
+    // Mapea cualquier ciclo a su año base en BD (ciclo_revaluacion siempre es 2023/2024/2025)
+    const cicloABase = (ciclo) => {
+      if (ciclo === 2023 || ciclo === 2026 || ciclo === 2029) return 2023;
+      if (ciclo === 2024 || ciclo === 2027 || ciclo === 2030) return 2024;
+      if (ciclo === 2025 || ciclo === 2028 || ciclo === 2031) return 2025;
+      return ciclo;
+    };
 
     // CORRECCIÓN 3: Townships cargados de la tabla completa (state "townships" ya existe en el componente padre)
     // Ordenados alfabéticamente
     const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
 
-    // Mapa ciclos futuros a ciclo base en BD (2026=SW=2023, 2027=Chicago=2024, 2028=North=2025)
-    const CICLO_FUTURO_A_BASE = { 2026: 2023, 2027: 2024, 2028: 2025 };
-
     const datosFiltrados = pendientesData.filter(p => {
       if (filtrosReporte.ciclo !== 'todos') {
         const cicloSeleccionado = parseInt(filtrosReporte.ciclo);
-        const cicloBase = CICLO_FUTURO_A_BASE[cicloSeleccionado] || cicloSeleccionado;
+        const cicloBase = cicloABase(cicloSeleccionado);
         if (p.ciclo_revaluacion !== cicloBase) return false;
       }
       if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
