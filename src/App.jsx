@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'; 
+import React, { useState, useEffect, useCallback, useRef } from 'react'; 
 
 var SUPABASE_URL = 'https://cokcypwamvacelutwzfm.supabase.co';
 var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNva2N5cHdhbXZhY2VsdXR3emZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MTYxNzAsImV4cCI6MjA4NDQ5MjE3MH0.c6yYN4BBZhwfeHzbmFNyZLkWcwmoNL_9Jdvi17EGX-E';
@@ -146,6 +146,45 @@ export default function PTRSSystem() {
   const [facturaEditando, setFacturaEditando] = useState(null);
   const [facturaABorrar, setFacturaABorrar] = useState(null);
   const ITEMS_POR_PAGINA = 50;
+
+  // ── Historial del navegador (botón atrás) ──────────────────────────────
+  const isPopStateRef = useRef(false);
+
+  // Cuando vistaActual cambia (por click en el menú o en la app),
+  // guardamos el estado en el historial del navegador
+  useEffect(() => {
+    if (isPopStateRef.current) {
+      isPopStateRef.current = false;
+      return;
+    }
+    const state = {
+      vista: vistaActual,
+      cliente: clienteSeleccionado,
+      tab: expedienteTab,
+    };
+    history.pushState(state, '', '#' + vistaActual);
+  }, [vistaActual]);
+
+  // Escuchar el botón atrás/adelante del navegador
+  useEffect(() => {
+    const handlePopState = (e) => {
+      if (e.state?.vista) {
+        isPopStateRef.current = true;
+        setVistaActual(e.state.vista);
+        setClienteSeleccionado(e.state.cliente || null);
+        if (e.state.tab) setExpedienteTab(e.state.tab);
+      } else {
+        isPopStateRef.current = true;
+        setVistaActual('dashboard');
+        setClienteSeleccionado(null);
+      }
+    };
+    // Estado inicial en el historial
+    history.replaceState({ vista: 'dashboard', cliente: null, tab: 'info' }, '', '#dashboard');
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+  // ───────────────────────────────────────────────────────────────────────
 
   // Auth effects - Safari compatible
   useEffect(() => {
