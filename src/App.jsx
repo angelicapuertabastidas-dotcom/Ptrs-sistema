@@ -5153,15 +5153,24 @@ export default function PTRSSystem() {
       setErrorReporte(null);
       
       try {
-        const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } }),
-          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } }),
-          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } })
-        ]);
+        const rpcFetch = (nombre) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${nombre}`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+            'Content-Type': 'application/json',
+            'Range-Unit': 'items',
+            'Range': '0-29999',
+            'Prefer': 'count=exact'
+          },
+          body: JSON.stringify({})
+        }).then(r => r.json());
 
-        const pendientesResult = await resPendientes.json();
-        const townshipResult = await resTownship.json();
-        const regionResult = await resRegion.json();
+        const [pendientesResult, townshipResult, regionResult] = await Promise.all([
+          rpcFetch('get_clientes_pendientes_aplicar'),
+          rpcFetch('get_resumen_pendientes_por_township'),
+          rpcFetch('get_resumen_pendientes_por_region'),
+        ]);
 
         setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
         setResumenTownship(Array.isArray(townshipResult) ? townshipResult : []);
