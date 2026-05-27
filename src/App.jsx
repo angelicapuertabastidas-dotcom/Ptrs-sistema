@@ -1153,12 +1153,13 @@ export default function PTRSSystem() {
       }
       
       var notasContacto = [];
+      if (clienteOrigen.numero_cliente) notasContacto.push('PTRS #: ' + clienteOrigen.numero_cliente);
       if (clienteOrigen.customer_number) notasContacto.push('Customer #: ' + clienteOrigen.customer_number);
       if (clienteOrigen.work_order_number) notasContacto.push('Work Order #: ' + clienteOrigen.work_order_number);
       if (clienteOrigen.direccion_correspondencia) notasContacto.push('Dirección: ' + clienteOrigen.direccion_correspondencia);
       notasContacto.push('Facturas transferidas: ' + facturasOrigen.length);
       notasContacto.push('Propiedades transferidas: ' + propiedadesOrigen.length);
-      notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString());
+      notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString('es-MX'));
       
       await api('contactos_cliente', {
         method: 'POST',
@@ -1178,7 +1179,8 @@ export default function PTRSSystem() {
       });
       
       // Crear nota con historial de la fusión
-      var notaContenido = '📋 CLIENTE FUSIONADO:\n';
+      var notaContenido = '📋 REGISTRO FUSIONADO:\n';
+      if (clienteOrigen.numero_cliente) notaContenido += 'PTRS #: ' + clienteOrigen.numero_cliente + '\n';
       notaContenido += 'Nombre: ' + nombreCompleto + '\n';
       if (clienteOrigen.customer_number) notaContenido += 'Customer #: ' + clienteOrigen.customer_number + '\n';
       if (clienteOrigen.work_order_number) notaContenido += 'Work Order #: ' + clienteOrigen.work_order_number + '\n';
@@ -1186,7 +1188,8 @@ export default function PTRSSystem() {
       if (clienteOrigen.email) notaContenido += 'Email: ' + clienteOrigen.email + '\n';
       if (clienteOrigen.direccion_correspondencia) notaContenido += 'Dirección: ' + clienteOrigen.direccion_correspondencia + '\n';
       notaContenido += 'Facturas transferidas: ' + facturasOrigen.length + '\n';
-      notaContenido += 'Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0);
+      notaContenido += 'Propiedades transferidas: ' + propiedadesOrigen.length + '\n';
+      notaContenido += 'Fusionado el: ' + new Date().toLocaleDateString('es-MX');
       
       await api('notas', {
         method: 'POST',
