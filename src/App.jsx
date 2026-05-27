@@ -4861,21 +4861,26 @@ export default function PTRSSystem() {
     const [mergeEnProgreso, setMergeEnProgreso] = useState(false);
     const [progreso, setProgreso] = useState({ actual: 0, total: 0, log: [], errores: 0 });
     const [resultadoFinal, setResultadoFinal] = useState(null);
+    const [modoDup, setModoDup] = useState('nombre'); // 'pin' o 'nombre'
     const DUP_POR_PAGINA = 20;
 
-    useEffect(() => { cargarDuplicados(); }, []);
+    useEffect(() => { cargarDuplicados(); }, [modoDup]);
 
     const cargarDuplicados = async () => {
       setLoadingDup(true);
       setGruposSeleccionados(new Set());
       setResultadoFinal(null);
       try {
-        const res = await api('rpc/detectar_duplicados_por_pin', {
+        const rpc = modoDup === 'pin' ? 'detectar_duplicados_por_pin' : 'detectar_duplicados_por_nombre_telefono';
+        const res = await api(`rpc/${rpc}`, {
           method: 'POST', body: {}, token,
           headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
         });
         const data = await res.json();
-        if (Array.isArray(data)) { setDuplicados(data); setTotalDup(data.length); }
+        if (Array.isArray(data)) {
+          setDuplicados(data);
+          setTotalDup(data.length);
+        }
       } catch (e) { console.error('Error cargando duplicados:', e); }
       setLoadingDup(false);
     };
@@ -4894,10 +4899,14 @@ export default function PTRSSystem() {
       })[0];
     };
 
-    const toggleGrupo = (pin) => {
+    // Clave única del grupo según el modo
+    const grupoKey = (dup) => modoDup === 'pin' ? dup.pin : `${dup.nombre_completo}||${dup.telefono}`;
+
+    const toggleGrupo = (dup) => {
+      const key = grupoKey(dup);
       setGruposSeleccionados(prev => {
         const next = new Set(prev);
-        if (next.has(pin)) next.delete(pin); else next.add(pin);
+        if (next.has(key)) next.delete(key); else next.add(key);
         return next;
       });
     };
@@ -4906,7 +4915,7 @@ export default function PTRSSystem() {
       const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
       setGruposSeleccionados(prev => {
         const next = new Set(prev);
-        paginados.forEach(d => next.add(d.pin));
+        paginados.forEach(d => next.add(grupoKey(d)));
         return next;
       });
     };
@@ -4914,11 +4923,11 @@ export default function PTRSSystem() {
     const deseleccionarTodos = () => setGruposSeleccionados(new Set());
 
     const ejecutarMergeMasivo = async () => {
-      const gruposParaMerge = duplicados.filter(d => gruposSeleccionados.has(d.pin));
+      const gruposParaMerge = duplicados.filter(d => gruposSeleccionados.has(grupoKey(d)));
       if (gruposParaMerge.length === 0) return;
 
       const confirmado = window.confirm(
-        `¿Fusionar ${gruposParaMerge.length} grupos?\n\nEl sistema elegirá automáticamente el cliente principal (el que tenga más propiedades). Esta acción no se puede deshacer.`
+        `¿Fusionar ${gruposParaMerge.length} grupos?\n\nSe fusionarán al expediente más antiguo (PTRS # más bajo). Esta acción no se puede deshacer.`
       );
       if (!confirmado) return;
 
@@ -4984,7 +4993,7 @@ export default function PTRSSystem() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
-            <p className="text-gray-500 mt-1">Clientes que comparten PINs — revisa y fusiona si corresponde</p>
+            <p className="text-gray-500 mt-1">Detecta y fusiona registros duplicados del mismo cliente</p>
           </div>
           <button onClick={cargarDuplicados} disabled={loadingDup || mergeEnProgreso}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
@@ -4992,11 +5001,27 @@ export default function PTRSSystem() {
           </button>
         </div>
 
+        {/* Pestañas */}
+        <div className="flex gap-2 bg-white rounded-xl shadow-sm border p-1 w-fit">
+          <button
+            onClick={() => { setModoDup('nombre'); setPaginaDup(0); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'nombre' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            👤 Por Nombre + Teléfono
+          </button>
+          <button
+            onClick={() => { setModoDup('pin'); setPaginaDup(0); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'pin' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            📍 Por PIN Compartido
+          </button>
+        </div>
+
         {/* Resumen */}
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <p className="text-orange-800 font-medium">
-            ⚠️ Se encontraron <strong>{totalDup}</strong> PINs compartidos entre clientes diferentes.
-            Esto puede indicar duplicados, cambios de nombre o propiedades que pasaron a otra persona.
+            ⚠️ Se encontraron <strong>{totalDup}</strong> {modoDup === 'pin' ? 'PINs compartidos entre clientes diferentes' : 'grupos de clientes con mismo nombre y teléfono'}.
+            Esto puede indicar duplicados creados en diferentes momentos.
           </p>
         </div>
 
@@ -5062,19 +5087,28 @@ export default function PTRSSystem() {
         ) : (
           <div className="space-y-4">
             {paginados.map((dup, idx) => {
-              const seleccionado = gruposSeleccionados.has(dup.pin);
+              const key = grupoKey(dup);
+              const seleccionado = gruposSeleccionados.has(key);
               const destino = elegirDestino(dup.clientes || []);
               return (
                 <div key={idx} className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all ${seleccionado ? 'ring-2 ring-orange-400' : ''}`}>
                   <div className={`p-4 border-b flex items-center gap-3 ${seleccionado ? 'bg-orange-100 border-orange-300' : 'bg-orange-50 border-orange-200'}`}>
-                    {/* Checkbox */}
-                    <input type="checkbox" checked={seleccionado} onChange={() => toggleGrupo(dup.pin)}
+                    <input type="checkbox" checked={seleccionado} onChange={() => toggleGrupo(dup)}
                       disabled={mergeEnProgreso}
                       className="w-4 h-4 accent-orange-600 cursor-pointer flex-shrink-0" />
                     <div className="flex-1 flex items-center justify-between">
                       <div>
-                        <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
-                        <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
+                        {modoDup === 'pin' ? (
+                          <>
+                            <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
+                            <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-orange-800">{dup.nombre_completo}</span>
+                            <span className="ml-3 text-sm text-orange-600">📞 {dup.telefono}</span>
+                          </>
+                        )}
                         {seleccionado && destino && (
                           <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
                             Principal (más antiguo): {destino.nombre} {destino.apellido} ({destino.numero_cliente})
@@ -5082,7 +5116,7 @@ export default function PTRSSystem() {
                         )}
                       </div>
                       <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
-                        {dup.cantidad_clientes} clientes
+                        {dup.cantidad_clientes} registros
                       </span>
                     </div>
                   </div>
