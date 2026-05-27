@@ -949,7 +949,8 @@ export default function PTRSSystem() {
           const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
             method: 'PATCH',
             body: updateData,
-            token
+            token,
+            headers: { 'Prefer': 'return=representation' }
           });
           
           if (updateRes.ok) {
