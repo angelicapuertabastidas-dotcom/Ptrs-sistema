@@ -5185,8 +5185,8 @@ export default function PTRSSystem() {
     const CHI_CICLO    = getCurrentCiclo(2024); // 2024 en 2026, 2027 en 2027...
     const NORTH_CICLO  = getCurrentCiclo(2025); // 2025 en 2026, 2028 en 2028...
 
-    // Los 6 ciclos cubiertos por el RPC (trienio actual + siguiente de cada región)
-    const CICLOS_COOK_COUNTY = [SW_CICLO, CHI_CICLO, NORTH_CICLO, SW_CICLO+3, CHI_CICLO+3, NORTH_CICLO+3];
+    // Los 6 ciclos cubiertos (3 pasados/presentes + 3 futuros)
+    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
 
     // Regiones con el año de ciclo actual calculado dinámicamente
     const REGIONES_COOK_COUNTY = [
@@ -5195,13 +5195,9 @@ export default function PTRSSystem() {
       { value: 'north',      label: `North (Ciclo ${NORTH_CICLO})`,     base: 2025 },
     ];
 
-    // Mapea cualquier ciclo a su año base en BD (ciclo_revaluacion siempre es 2023/2024/2025)
-    const cicloABase = (ciclo) => {
-      if (ciclo === 2023 || ciclo === 2026 || ciclo === 2029) return 2023;
-      if (ciclo === 2024 || ciclo === 2027 || ciclo === 2030) return 2024;
-      if (ciclo === 2025 || ciclo === 2028 || ciclo === 2031) return 2025;
-      return ciclo;
-    };
+    // El RPC ya devuelve cur_ciclo directamente (2023, 2024, 2025, 2026, 2027, 2028)
+    // No necesita mapeo — comparación directa
+    const cicloABase = (ciclo) => ciclo;
 
     // CORRECCIÓN 3: Townships cargados de la tabla completa (state "townships" ya existe en el componente padre)
     // Ordenados alfabéticamente
