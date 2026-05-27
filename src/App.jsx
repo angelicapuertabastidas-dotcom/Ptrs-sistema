@@ -13,7 +13,8 @@ var api = async function(endpoint, options) {
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
-    'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
+    'Prefer': method === 'POST' ? 'return=representation' : 'count=exact',
+    ...(options.headers || {})
   };
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
