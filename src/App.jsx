@@ -5154,9 +5154,9 @@ export default function PTRSSystem() {
       
       try {
         const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
-          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } }),
-          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999' } })
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } }),
+          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } }),
+          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token, headers: { 'Range-Unit': 'items', 'Range': '0-9999', 'Prefer': 'count=exact' } })
         ]);
 
         const pendientesResult = await resPendientes.json();
