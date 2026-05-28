@@ -31,6 +31,15 @@ var authSignIn = async function(email, password) {
   return res.json();
 };
 
+var authRefresh = async function(refreshToken) {
+  var res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  return res.json();
+};
+
 // Upload file to Supabase Storage
 var uploadFile = async function(file, folder, token) {
   var timestamp = Date.now();
@@ -94,6 +103,33 @@ function Icon({ name, size = 5 }) {
   return icons[name] || null;
 }
 
+// ── Error Boundary — evita pantalla en blanco ─────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error, info) { console.error('App error:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial', gap:'16px' }}>
+          <div style={{ fontSize:'48px' }}>⚠️</div>
+          <h2 style={{ color:'#1e3a5f', margin:0 }}>Algo salió mal</h2>
+          <p style={{ color:'#6b7280', margin:0 }}>La sesión puede haber expirado o hubo un error inesperado.</p>
+          <button onClick={() => window.location.reload()}
+            style={{ background:'#2563eb', color:'white', border:'none', borderRadius:'8px', padding:'10px 24px', cursor:'pointer', fontSize:'16px' }}>
+            🔄 Recargar aplicación
+          </button>
+          <button onClick={() => { localStorage.clear(); window.location.reload(); }}
+            style={{ background:'transparent', color:'#6b7280', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'8px 20px', cursor:'pointer' }}>
+            Cerrar sesión y reiniciar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function PTRSSystem() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -149,7 +185,29 @@ export default function PTRSSystem() {
   const [facturaABorrar, setFacturaABorrar] = useState(null);
   const ITEMS_POR_PAGINA = 50;
 
-  // ── Historial del navegador (botón atrás) ──────────────────────────────
+  // ── Auto-refresh de sesión cada 45 minutos ───────────────────────────────
+  useEffect(() => {
+    if (!token) return;
+    const renovar = async () => {
+      try {
+        const refreshToken = localStorage.getItem('ptrs_refresh_token');
+        if (!refreshToken) return;
+        const result = await authRefresh(refreshToken);
+        if (result.access_token) {
+          localStorage.setItem('ptrs_token', result.access_token);
+          localStorage.setItem('ptrs_refresh_token', result.refresh_token || refreshToken);
+          setToken(result.access_token);
+          console.log('Sesión renovada automáticamente');
+        }
+      } catch (e) {
+        console.error('Error renovando sesión:', e);
+      }
+    };
+    // Renovar cada 45 minutos
+    const intervalo = setInterval(renovar, 45 * 60 * 1000);
+    return () => clearInterval(intervalo);
+  }, [token]);
+  // ─────────────────────────────────────────────────────────────────────────
   const isPopStateRef = useRef(false);
 
   // Cuando vistaActual cambia (por click en el menú o en la app),
@@ -212,6 +270,7 @@ export default function PTRSSystem() {
       } else if (result.access_token) {
         try {
           localStorage.setItem('ptrs_token', result.access_token);
+          localStorage.setItem('ptrs_refresh_token', result.refresh_token || '');
           localStorage.setItem('ptrs_user', JSON.stringify(result.user));
         } catch (e) {
           console.log('Could not save to localStorage');
@@ -1312,7 +1371,7 @@ export default function PTRSSystem() {
   }
 
   if (!user || !token) {
-    return <LoginScreen onLogin={handleLogin} loading={authLoading} />;
+    return <ErrorBoundary><LoginScreen onLogin={handleLogin} loading={authLoading} /></ErrorBoundary>;
   }
 
   // Components
@@ -5803,6 +5862,7 @@ export default function PTRSSystem() {
   };
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-gray-100">
       <Sidebar />
       
@@ -5898,6 +5958,7 @@ export default function PTRSSystem() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setMenuAbierto(false)}></div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
 
