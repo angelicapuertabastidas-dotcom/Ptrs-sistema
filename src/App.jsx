@@ -917,7 +917,14 @@ export default function PTRSSystem() {
           });
           
           if (updateRes.ok) {
-            setPropiedadSeleccionada({...propiedad, ...updateData});
+            // Recargar propiedad directamente desde DB para asegurar datos frescos
+            const propRes = await api(`propiedades?id=eq.${propiedad.id}`, { token });
+            const propData = await propRes.json();
+            if (propData?.[0]) {
+              setPropiedadSeleccionada(propData[0]);
+            } else {
+              setPropiedadSeleccionada({...propiedad, ...updateData});
+            }
             if (clienteSeleccionado) {
               const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
               const clienteData = await res.json();
