@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'; 
+import React, { useState, useEffect, useCallback } from 'react'; 
 
 var SUPABASE_URL = 'https://cokcypwamvacelutwzfm.supabase.co';
 var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNva2N5cHdhbXZhY2VsdXR3emZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MTYxNzAsImV4cCI6MjA4NDQ5MjE3MH0.c6yYN4BBZhwfeHzbmFNyZLkWcwmoNL_9Jdvi17EGX-E';
@@ -13,8 +13,7 @@ var api = async function(endpoint, options) {
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
     'Content-Type': 'application/json',
-    'Prefer': method === 'POST' ? 'return=representation' : 'count=exact',
-    ...(options.headers || {})
+    'Prefer': method === 'POST' ? 'return=representation' : 'count=exact'
   };
   var config = { method: method, headers: headers };
   if (body) config.body = JSON.stringify(body);
@@ -27,15 +26,6 @@ var authSignIn = async function(email, password) {
     method: 'POST',
     headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: email, password: password })
-  });
-  return res.json();
-};
-
-var authRefresh = async function(refreshToken) {
-  var res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
-    method: 'POST',
-    headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken })
   });
   return res.json();
 };
@@ -103,33 +93,6 @@ function Icon({ name, size = 5 }) {
   return icons[name] || null;
 }
 
-// ── Error Boundary — evita pantalla en blanco ─────────────────────────────
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(error, info) { console.error('App error:', error, info); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial', gap:'16px' }}>
-          <div style={{ fontSize:'48px' }}>⚠️</div>
-          <h2 style={{ color:'#1e3a5f', margin:0 }}>Algo salió mal</h2>
-          <p style={{ color:'#6b7280', margin:0 }}>La sesión puede haber expirado o hubo un error inesperado.</p>
-          <button onClick={() => window.location.reload()}
-            style={{ background:'#2563eb', color:'white', border:'none', borderRadius:'8px', padding:'10px 24px', cursor:'pointer', fontSize:'16px' }}>
-            🔄 Recargar aplicación
-          </button>
-          <button onClick={() => { localStorage.clear(); window.location.reload(); }}
-            style={{ background:'transparent', color:'#6b7280', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'8px 20px', cursor:'pointer' }}>
-            Cerrar sesión y reiniciar
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function PTRSSystem() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -137,7 +100,6 @@ export default function PTRSSystem() {
   const [vistaActual, setVistaActual] = useState('dashboard');
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState('');
-  const [ordenClientes, setOrdenClientes] = useState('nombre.asc');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [toast, setToast] = useState(null);
   const [modalActivo, setModalActivo] = useState(null);
@@ -185,67 +147,6 @@ export default function PTRSSystem() {
   const [facturaABorrar, setFacturaABorrar] = useState(null);
   const ITEMS_POR_PAGINA = 50;
 
-  // ── Auto-refresh de sesión cada 45 minutos ───────────────────────────────
-  useEffect(() => {
-    if (!token) return;
-    const renovar = async () => {
-      try {
-        const refreshToken = localStorage.getItem('ptrs_refresh_token');
-        if (!refreshToken) return;
-        const result = await authRefresh(refreshToken);
-        if (result.access_token) {
-          localStorage.setItem('ptrs_token', result.access_token);
-          localStorage.setItem('ptrs_refresh_token', result.refresh_token || refreshToken);
-          setToken(result.access_token);
-          console.log('Sesión renovada automáticamente');
-        }
-      } catch (e) {
-        console.error('Error renovando sesión:', e);
-      }
-    };
-    // Renovar cada 45 minutos
-    const intervalo = setInterval(renovar, 45 * 60 * 1000);
-    return () => clearInterval(intervalo);
-  }, [token]);
-  // ─────────────────────────────────────────────────────────────────────────
-  const isPopStateRef = useRef(false);
-
-  // Cuando vistaActual cambia (por click en el menú o en la app),
-  // guardamos el estado en el historial del navegador
-  useEffect(() => {
-    if (isPopStateRef.current) {
-      isPopStateRef.current = false;
-      return;
-    }
-    const state = {
-      vista: vistaActual,
-      cliente: clienteSeleccionado,
-      tab: expedienteTab,
-    };
-    history.pushState(state, '', '#' + vistaActual);
-  }, [vistaActual]);
-
-  // Escuchar el botón atrás/adelante del navegador
-  useEffect(() => {
-    const handlePopState = (e) => {
-      if (e.state?.vista) {
-        isPopStateRef.current = true;
-        setVistaActual(e.state.vista);
-        setClienteSeleccionado(e.state.cliente || null);
-        if (e.state.tab) setExpedienteTab(e.state.tab);
-      } else {
-        isPopStateRef.current = true;
-        setVistaActual('dashboard');
-        setClienteSeleccionado(null);
-      }
-    };
-    // Estado inicial en el historial
-    history.replaceState({ vista: 'dashboard', cliente: null, tab: 'info' }, '', '#dashboard');
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-  // ───────────────────────────────────────────────────────────────────────
-
   // Auth effects - Safari compatible
   useEffect(() => {
     try {
@@ -270,7 +171,6 @@ export default function PTRSSystem() {
       } else if (result.access_token) {
         try {
           localStorage.setItem('ptrs_token', result.access_token);
-          localStorage.setItem('ptrs_refresh_token', result.refresh_token || '');
           localStorage.setItem('ptrs_user', JSON.stringify(result.user));
         } catch (e) {
           console.log('Could not save to localStorage');
@@ -355,7 +255,7 @@ export default function PTRSSystem() {
         }
       } else {
         // No search - paginated list
-        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientes + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
         var res = await api(url, { token: token });
         
         // Get total count from header
@@ -374,7 +274,7 @@ export default function PTRSSystem() {
       setClientes([]);
     }
     setLoading(false);
-  }, [token, ordenClientes]);
+  }, [token]);
 
   const loadTownships = useCallback(async () => {
     try {
@@ -931,6 +831,116 @@ export default function PTRSSystem() {
       const pinLimpio = propiedad.pin.replace(/-/g, '');
       console.log('Buscando PIN:', pinLimpio);
       
+      let direccion = '', townshipNombre = '', ciudad = '', zip = '';
+      let clasePropiedad = '';
+      let encontrado = false;
+      
+      // API 1: Dirección y township (tx2p-k2g9)
+      const fetchAddress = async (useProxy = false) => {
+        const url = `https://datacatalog.cookcountyil.gov/resource/tx2p-k2g9.json?pin=${pinLimpio}&$order=year DESC&$limit=1`;
+        const fetchUrl = useProxy ? `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` : url;
+        const res = await fetch(fetchUrl);
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (data?.length > 0) {
+          const info = data[0];
+          direccion = info.prop_address_full || '';
+          townshipNombre = info.township_name || '';
+          ciudad = info.prop_address_city_name || '';
+          zip = info.prop_address_zipcode_1 || '';
+          return true;
+        }
+        return false;
+      };
+
+      // API 2: Clase de propiedad (nj4t-kc8j - Parcel Universe)
+      const fetchClass = async (useProxy = false) => {
+        const url = `https://datacatalog.cookcountyil.gov/resource/nj4t-kc8j.json?pin14=${pinLimpio}&$limit=1`;
+        const fetchUrl = useProxy ? `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` : url;
+        try {
+          const res = await fetch(fetchUrl);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data?.length > 0) {
+            clasePropiedad = data[0].class || data[0].property_class || data[0].prop_class || '';
+          }
+        } catch (e) {
+          console.log('Error fetching class:', e.message);
+        }
+      };
+
+      // Intentar directo, luego con proxy
+      try {
+        encontrado = await fetchAddress(false);
+        await fetchClass(false);
+      } catch (e) {
+        try {
+          encontrado = await fetchAddress(true);
+          await fetchClass(true);
+        } catch (e2) {
+          console.log('Error con proxy:', e2.message);
+        }
+      }
+      
+      if (encontrado && (direccion || townshipNombre)) {
+        // Buscar township en nuestra base de datos
+        let townshipId = null;
+        if (townshipNombre) {
+          const twpEncontrado = townships.find(t => 
+            t.nombre.toLowerCase() === townshipNombre.toLowerCase() ||
+            t.nombre.toLowerCase().includes(townshipNombre.toLowerCase()) ||
+            townshipNombre.toLowerCase().includes(t.nombre.toLowerCase())
+          );
+          if (twpEncontrado) townshipId = twpEncontrado.id;
+        }
+        
+        const updateData = {};
+        if (direccion) updateData.direccion = direccion;
+        if (ciudad) updateData.ciudad = ciudad;
+        if (zip) updateData.zip = zip;
+        if (townshipId) updateData.township_id = townshipId;
+        if (clasePropiedad) updateData.clase_propiedad = clasePropiedad;
+        
+        // Determinar es_residencial basado en clase
+        if (clasePropiedad) {
+          const claseNum = parseInt(clasePropiedad.toString().charAt(0));
+          updateData.es_residencial = [2, 3].includes(claseNum);
+        }
+        
+        if (Object.keys(updateData).length > 0) {
+          const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
+            method: 'PATCH',
+            body: updateData,
+            token,
+            headers: { 'Prefer': 'return=representation' }
+          });
+          
+          if (updateRes.ok) {
+            setPropiedadSeleccionada({...propiedad, ...updateData});
+            if (clienteSeleccionado) {
+              const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+              const clienteData = await res.json();
+              if (clienteData?.[0]) setClienteSeleccionado(clienteData[0]);
+            }
+            const claseStr = clasePropiedad ? ` — Clase ${clasePropiedad}` : '';
+            notify(`✅ Actualizado: ${direccion}${ciudad ? ', ' + ciudad : ''}${claseStr}`);
+          } else {
+            notify('Error al guardar los datos', 'error');
+          }
+        } else {
+          notify('No se encontraron datos nuevos para este PIN', 'info');
+        }
+      } else {
+        notify('PIN no encontrado en las bases de datos del condado', 'error');
+      }
+    } catch (e) {
+      console.error('Error buscando datos del condado:', e);
+      notify('Error al consultar el condado: ' + e.message, 'error');
+    } finally {
+      setBuscandoDatosCondado(false);
+    }
+  };
+      
       let direccion = '';
       let townshipNombre = '';
       let ciudad = '';
@@ -1009,8 +1019,7 @@ export default function PTRSSystem() {
           const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
             method: 'PATCH',
             body: updateData,
-            token,
-            headers: { 'Prefer': 'return=representation' }
+            token
           });
           
           if (updateRes.ok) {
@@ -1127,8 +1136,8 @@ export default function PTRSSystem() {
     setSaving(false);
   };
 
-  const mergeClientes = async (clienteOrigen, clienteDestino, silent = false) => {
-    if (!silent) setSaving(true);
+  const mergeClientes = async (clienteOrigen, clienteDestino) => {
+    setSaving(true);
     try {
       var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
       nombreCompleto = nombreCompleto.trim();
@@ -1212,13 +1221,12 @@ export default function PTRSSystem() {
       }
       
       var notasContacto = [];
-      if (clienteOrigen.numero_cliente) notasContacto.push('PTRS #: ' + clienteOrigen.numero_cliente);
       if (clienteOrigen.customer_number) notasContacto.push('Customer #: ' + clienteOrigen.customer_number);
       if (clienteOrigen.work_order_number) notasContacto.push('Work Order #: ' + clienteOrigen.work_order_number);
       if (clienteOrigen.direccion_correspondencia) notasContacto.push('Dirección: ' + clienteOrigen.direccion_correspondencia);
       notasContacto.push('Facturas transferidas: ' + facturasOrigen.length);
       notasContacto.push('Propiedades transferidas: ' + propiedadesOrigen.length);
-      notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString('es-MX'));
+      notasContacto.push('Fusionado el: ' + new Date().toLocaleDateString());
       
       await api('contactos_cliente', {
         method: 'POST',
@@ -1238,8 +1246,7 @@ export default function PTRSSystem() {
       });
       
       // Crear nota con historial de la fusión
-      var notaContenido = '📋 REGISTRO FUSIONADO:\n';
-      if (clienteOrigen.numero_cliente) notaContenido += 'PTRS #: ' + clienteOrigen.numero_cliente + '\n';
+      var notaContenido = '📋 CLIENTE FUSIONADO:\n';
       notaContenido += 'Nombre: ' + nombreCompleto + '\n';
       if (clienteOrigen.customer_number) notaContenido += 'Customer #: ' + clienteOrigen.customer_number + '\n';
       if (clienteOrigen.work_order_number) notaContenido += 'Work Order #: ' + clienteOrigen.work_order_number + '\n';
@@ -1247,8 +1254,7 @@ export default function PTRSSystem() {
       if (clienteOrigen.email) notaContenido += 'Email: ' + clienteOrigen.email + '\n';
       if (clienteOrigen.direccion_correspondencia) notaContenido += 'Dirección: ' + clienteOrigen.direccion_correspondencia + '\n';
       notaContenido += 'Facturas transferidas: ' + facturasOrigen.length + '\n';
-      notaContenido += 'Propiedades transferidas: ' + propiedadesOrigen.length + '\n';
-      notaContenido += 'Fusionado el: ' + new Date().toLocaleDateString('es-MX');
+      notaContenido += 'Propiedades transferidas: ' + (clienteOrigen.propiedades?.length || 0);
       
       await api('notas', {
         method: 'POST',
@@ -1265,18 +1271,15 @@ export default function PTRSSystem() {
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
-      if (!silent) {
-        notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
-        setModalActivo(null);
-        setClienteParaMerge(null);
-        loadClientes(busqueda, paginaActual);
-        loadStats();
-      }
+      notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
+      setModalActivo(null);
+      setClienteParaMerge(null);
+      loadClientes(busqueda, paginaActual);
+      loadStats();
     } catch (e) {
-      if (!silent) notify('Error al fusionar clientes', 'error');
-      else throw e; // re-throw para que el loop masivo lo capture
+      notify('Error al fusionar clientes', 'error');
     }
-    if (!silent) setSaving(false);
+    setSaving(false);
   };
 
   const deleteCliente = async (cliente) => {
@@ -1371,7 +1374,7 @@ export default function PTRSSystem() {
   }
 
   if (!user || !token) {
-    return <ErrorBoundary><LoginScreen onLogin={handleLogin} loading={authLoading} /></ErrorBoundary>;
+    return <LoginScreen onLogin={handleLogin} loading={authLoading} />;
   }
 
   // Components
@@ -1710,45 +1713,15 @@ export default function PTRSSystem() {
       </div>
       
       <div className="bg-white rounded-xl shadow-sm border">
-        <div className="p-4 border-b flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-4">
+        <div className="p-4 border-b flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            {loading ? 'Buscando...' : `Mostrando ${clientes.length} de ${totalClientes.toLocaleString()} clientes`}
+          </p>
+          {totalPaginas > 1 && (
             <p className="text-sm text-gray-500">
-              {loading ? 'Buscando...' : (
-                <span>
-                  Mostrando <strong>{clientes.length}</strong> de <strong>{totalClientes.toLocaleString()}</strong> clientes
-                </span>
-              )}
+              Página {paginaActual + 1} de {totalPaginas}
             </p>
-            {!busqueda && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                📋 {totalClientes.toLocaleString()} expedientes en total
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Ordenar:</span>
-            <select
-              value={ordenClientes}
-              onChange={(e) => {
-                setOrdenClientes(e.target.value);
-                setPaginaActual(0);
-                loadClientes(busqueda, 0);
-              }}
-              className="text-sm border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="nombre.asc">A → Z</option>
-              <option value="nombre.desc">Z → A</option>
-              <option value="created_at.desc">Más recientes primero</option>
-              <option value="created_at.asc">Más antiguos primero</option>
-              <option value="numero_cliente.desc">PTRS # más alto</option>
-              <option value="numero_cliente.asc">PTRS # más bajo</option>
-            </select>
-            {totalPaginas > 1 && (
-              <p className="text-sm text-gray-500">
-                Pág. {paginaActual + 1} de {totalPaginas}
-              </p>
-            )}
-          </div>
+          )}
         </div>
         <div className="divide-y max-h-[500px] overflow-y-auto">
           {clientes.map((cliente) => (
@@ -3981,6 +3954,50 @@ export default function PTRSSystem() {
                       {twp.region === 'north' ? '🌐 North' : twp.region === 'south_west' ? '🌐 South-West' : twp.region === 'chicago' ? '🌐 Chicago' : twp.region}
                     </span>
                   )}
+
+                  {/* Badge de clase de propiedad */}
+                  {propiedadSeleccionada.clase_propiedad ? (() => {
+                    const clase = propiedadSeleccionada.clase_propiedad.toString();
+                    const claseNum = parseInt(clase.charAt(0));
+                    const esRes = [2, 3].includes(claseNum);
+                    const esCom = claseNum === 5;
+                    return (
+                      <span className={`px-2 py-0.5 rounded font-medium ${esRes ? 'bg-green-100 text-green-700' : esCom ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {esRes ? '🏠' : esCom ? '🏢' : '🏗️'} Clase {clase}
+                      </span>
+                    );
+                  })() : (
+                    <span className="bg-gray-100 text-gray-400 px-2 py-0.5 rounded text-xs">Sin clase</span>
+                  )}
+
+                  {/* Badge de tipo de cobro */}
+                  {propiedadSeleccionada.cobra_como_comercial ? (
+                    <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium text-xs">
+                      ⚠️ Cobra como comercial
+                    </span>
+                  ) : propiedadSeleccionada.es_residencial === false ? (
+                    <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs">🏢 Comercial</span>
+                  ) : propiedadSeleccionada.es_residencial === true ? (
+                    <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">🏠 Residencial</span>
+                  ) : null}
+
+                  {/* Toggle cobra como comercial */}
+                  <button
+                    onClick={async () => {
+                      const nuevoValor = !propiedadSeleccionada.cobra_como_comercial;
+                      await api(`propiedades?id=eq.${propiedadSeleccionada.id}`, {
+                        method: 'PATCH', body: { cobra_como_comercial: nuevoValor }, token,
+                        headers: { 'Prefer': 'return=representation' }
+                      });
+                      setPropiedadSeleccionada({...propiedadSeleccionada, cobra_como_comercial: nuevoValor});
+                      notify(nuevoValor ? '⚠️ Marcada como cobra comercial' : '✅ Removido cobro comercial');
+                    }}
+                    className="bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded text-xs hover:bg-yellow-100"
+                    title="Marcar/desmarcar cobro como comercial"
+                  >
+                    {propiedadSeleccionada.cobra_como_comercial ? '✓ Quitar cobro comercial' : '+ Marcar cobro comercial'}
+                  </button>
+
                   <button
                     onClick={() => buscarDatosCondado(propiedadSeleccionada)}
                     disabled={buscandoDatosCondado}
@@ -4919,240 +4936,59 @@ export default function PTRSSystem() {
     const [loadingDup, setLoadingDup] = useState(false);
     const [paginaDup, setPaginaDup] = useState(0);
     const [totalDup, setTotalDup] = useState(0);
-    const [gruposSeleccionados, setGruposSeleccionados] = useState(new Set());
-    const [mergeEnProgreso, setMergeEnProgreso] = useState(false);
-    const [progreso, setProgreso] = useState({ actual: 0, total: 0, log: [], errores: 0 });
-    const [resultadoFinal, setResultadoFinal] = useState(null);
-    const [modoDup, setModoDup] = useState('nombre'); // 'pin' o 'nombre'
     const DUP_POR_PAGINA = 20;
 
-    useEffect(() => { cargarDuplicados(modoDup); }, [modoDup]);
+    useEffect(() => {
+      cargarDuplicados();
+    }, []);
 
-    const cargarDuplicados = async (modo = modoDup) => {
+    const cargarDuplicados = async () => {
       setLoadingDup(true);
-      setGruposSeleccionados(new Set());
-      setResultadoFinal(null);
       try {
-        const rpc = modo === 'pin' ? 'detectar_duplicados_por_pin' : 'detectar_duplicados_por_nombre_telefono';
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+        // Buscar PINs que aparecen en más de un cliente
+        const res = await api('rpc/detectar_duplicados_por_pin', {
           method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
-            'Content-Type': 'application/json',
-            'Prefer': 'count=exact',
-            'Range-Unit': 'items',
-            'Range': '0-9999'
-          },
-          body: JSON.stringify({})
+          body: {},
+          token,
+          headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
         });
         const data = await res.json();
         if (Array.isArray(data)) {
           setDuplicados(data);
           setTotalDup(data.length);
-        } else {
-          console.error('RPC error:', data);
-          setDuplicados([]);
-          setTotalDup(0);
         }
-      } catch (e) { console.error('Error cargando duplicados:', e); }
-      setLoadingDup(false);
-    };
-
-    // El destino es siempre el cliente MÁS ANTIGUO
-    // Criterio: menor numero_cliente (PTRS-00001 es más antiguo que PTRS-00500)
-    // Si no tiene numero_cliente, usar el que tiene más propiedades como fallback
-    const elegirDestino = (clientes) => {
-      return [...clientes].sort((a, b) => {
-        const numA = parseInt((a.numero_cliente || '').replace(/\D/g, '')) || 99999;
-        const numB = parseInt((b.numero_cliente || '').replace(/\D/g, '')) || 99999;
-        // El número más bajo = más antiguo = es el destino
-        if (numA !== numB) return numA - numB;
-        // Tiebreak: más propiedades
-        return b.total_propiedades - a.total_propiedades;
-      })[0];
-    };
-
-    // Clave única del grupo según el modo
-    const grupoKey = (dup) => modoDup === 'pin' ? dup.pin : `${dup.nombre_completo}||${dup.telefono}`;
-
-    const toggleGrupo = (dup) => {
-      const key = grupoKey(dup);
-      setGruposSeleccionados(prev => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        return next;
-      });
-    };
-
-    const seleccionarTodosEnPagina = () => {
-      const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
-      setGruposSeleccionados(prev => {
-        const next = new Set(prev);
-        paginados.forEach(d => next.add(grupoKey(d)));
-        return next;
-      });
-    };
-
-    const deseleccionarTodos = () => setGruposSeleccionados(new Set());
-
-    const ejecutarMergeMasivo = async () => {
-      const gruposParaMerge = duplicados.filter(d => gruposSeleccionados.has(grupoKey(d)));
-      if (gruposParaMerge.length === 0) return;
-
-      const confirmado = window.confirm(
-        `¿Fusionar ${gruposParaMerge.length} grupos?\n\nSe fusionarán al expediente más antiguo (PTRS # más bajo). Esta acción no se puede deshacer.`
-      );
-      if (!confirmado) return;
-
-      setMergeEnProgreso(true);
-      setResultadoFinal(null);
-      let exitosos = 0, errores = 0;
-      const logEntradas = [];
-
-      setProgreso({ actual: 0, total: gruposParaMerge.length, log: [], errores: 0 });
-
-      for (let i = 0; i < gruposParaMerge.length; i++) {
-        const grupo = gruposParaMerge[i];
-        const clientes = grupo.clientes || [];
-        if (clientes.length < 2) continue;
-
-        const destino = elegirDestino(clientes);
-        const origenes = clientes.filter(c => c.cliente_id !== destino.cliente_id);
-
-        try {
-          for (const origen of origenes) {
-            const clienteOrigenObj = {
-              id: origen.cliente_id,
-              nombre: origen.nombre,
-              apellido: origen.apellido,
-              telefono_principal: origen.telefono_principal,
-              customer_number: origen.customer_number,
-              work_order_number: origen.work_order_number,
-              email: origen.email,
-              direccion_correspondencia: origen.direccion_correspondencia,
-              numero_cliente: origen.numero_cliente
-            };
-            const clienteDestinoObj = {
-              id: destino.cliente_id,
-              nombre: destino.nombre,
-              apellido: destino.apellido,
-              numero_cliente: destino.numero_cliente
-            };
-            await mergeClientes(clienteOrigenObj, clienteDestinoObj, true);
-          }
-          exitosos++;
-          logEntradas.push({ tipo: 'ok', msg: `✅ ${destino.nombre} ${destino.apellido} (${destino.numero_cliente}) — ${origenes.length} fusionado(s)` });
-        } catch (e) {
-          errores++;
-          logEntradas.push({ tipo: 'err', msg: `❌ PIN ${grupo.pin} — ${e.message}` });
-        }
-
-        setProgreso({ actual: i + 1, total: gruposParaMerge.length, log: [...logEntradas], errores });
+      } catch (e) {
+        console.error('Error cargando duplicados:', e);
       }
-
-      setResultadoFinal({ exitosos, errores, total: gruposParaMerge.length });
-      setMergeEnProgreso(false);
-      setGruposSeleccionados(new Set());
-      await cargarDuplicados();
+      setLoadingDup(false);
     };
 
     const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
     const totalPags = Math.ceil(totalDup / DUP_POR_PAGINA);
-    const seleccionadosEnPagina = paginados.filter(d => gruposSeleccionados.has(d.pin)).length;
 
     return (
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
-            <p className="text-gray-500 mt-1">Detecta y fusiona registros duplicados del mismo cliente</p>
+            <p className="text-gray-500 mt-1">Clientes que comparten PINs — revisa y fusiona si corresponde</p>
           </div>
-          <button onClick={() => cargarDuplicados(modoDup)} disabled={loadingDup || mergeEnProgreso}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <button
+            onClick={cargarDuplicados}
+            disabled={loadingDup}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
             {loadingDup ? 'Buscando...' : '🔄 Actualizar'}
-          </button>
-        </div>
-
-        {/* Pestañas */}
-        <div className="flex gap-2 bg-white rounded-xl shadow-sm border p-1 w-fit">
-          <button
-            onClick={() => { setModoDup('nombre'); setPaginaDup(0); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'nombre' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            👤 Por Nombre + Teléfono
-          </button>
-          <button
-            onClick={() => { setModoDup('pin'); setPaginaDup(0); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'pin' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            📍 Por PIN Compartido
           </button>
         </div>
 
         {/* Resumen */}
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <p className="text-orange-800 font-medium">
-            ⚠️ Se encontraron <strong>{totalDup}</strong> {modoDup === 'pin' ? 'PINs compartidos entre clientes diferentes' : 'grupos de clientes con mismo nombre y teléfono'}.
-            Esto puede indicar duplicados creados en diferentes momentos.
+            ⚠️ Se encontraron <strong>{totalDup}</strong> PINs compartidos entre clientes diferentes.
+            Esto puede indicar duplicados, cambios de nombre o propiedades que pasaron a otra persona.
           </p>
         </div>
-
-        {/* Resultado final */}
-        {resultadoFinal && (
-          <div className={`rounded-xl p-4 border ${resultadoFinal.errores === 0 ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-            <p className={`font-bold text-lg ${resultadoFinal.errores === 0 ? 'text-green-800' : 'text-yellow-800'}`}>
-              {resultadoFinal.errores === 0 ? '✅' : '⚠️'} Merge completado: {resultadoFinal.exitosos} exitosos, {resultadoFinal.errores} errores de {resultadoFinal.total} grupos
-            </p>
-          </div>
-        )}
-
-        {/* Barra de progreso durante merge */}
-        {mergeEnProgreso && (
-          <div className="bg-white rounded-xl shadow-sm border p-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="font-medium text-gray-900">Fusionando grupos... {progreso.actual}/{progreso.total}</p>
-              <span className="text-sm text-gray-500">{Math.round((progreso.actual / progreso.total) * 100)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-                style={{ width: `${(progreso.actual / progreso.total) * 100}%` }} />
-            </div>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {progreso.log.slice(-8).map((entry, i) => (
-                <p key={i} className={`text-xs ${entry.tipo === 'ok' ? 'text-green-700' : 'text-red-600'}`}>{entry.msg}</p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Barra de acciones masivas */}
-        {!mergeEnProgreso && duplicados.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border p-4 flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <button onClick={seleccionarTodosEnPagina}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-                Seleccionar página ({DUP_POR_PAGINA})
-              </button>
-              {gruposSeleccionados.size > 0 && (
-                <button onClick={deseleccionarTodos}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-                  Deseleccionar todos
-                </button>
-              )}
-              {gruposSeleccionados.size > 0 && (
-                <span className="text-sm text-blue-600 font-medium">{gruposSeleccionados.size} grupos seleccionados</span>
-              )}
-            </div>
-            {gruposSeleccionados.size > 0 && (
-              <button onClick={ejecutarMergeMasivo}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 flex items-center gap-2">
-                🔀 Fusionar {gruposSeleccionados.size} grupos seleccionados
-              </button>
-            )}
-          </div>
-        )}
 
         {loadingDup ? (
           <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
@@ -5160,103 +4996,80 @@ export default function PTRSSystem() {
           </div>
         ) : (
           <div className="space-y-4">
-            {paginados.map((dup, idx) => {
-              const key = grupoKey(dup);
-              const seleccionado = gruposSeleccionados.has(key);
-              const destino = elegirDestino(dup.clientes || []);
-              return (
-                <div key={idx} className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all ${seleccionado ? 'ring-2 ring-orange-400' : ''}`}>
-                  <div className={`p-4 border-b flex items-center gap-3 ${seleccionado ? 'bg-orange-100 border-orange-300' : 'bg-orange-50 border-orange-200'}`}>
-                    <input type="checkbox" checked={seleccionado} onChange={() => toggleGrupo(dup)}
-                      disabled={mergeEnProgreso}
-                      className="w-4 h-4 accent-orange-600 cursor-pointer flex-shrink-0" />
-                    <div className="flex-1 flex items-center justify-between">
-                      <div>
-                        {modoDup === 'pin' ? (
-                          <>
-                            <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
-                            <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="font-bold text-orange-800">{dup.nombre_completo}</span>
-                            <span className="ml-3 text-sm text-orange-600">📞 {dup.telefono}</span>
-                          </>
-                        )}
-                        {seleccionado && destino && (
-                          <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                            Principal (más antiguo): {destino.nombre} {destino.apellido} ({destino.numero_cliente})
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
-                        {dup.cantidad_clientes} registros
-                      </span>
+            {paginados.map((dup, idx) => (
+              <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="p-4 bg-orange-50 border-b border-orange-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
+                      <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
                     </div>
-                  </div>
-                  <div className="divide-y">
-                    {(dup.clientes || []).map((c, cidx) => {
-                      const esDestino = seleccionado && destino && c.cliente_id === destino.cliente_id;
-                      return (
-                        <div key={cidx} className={`p-4 flex items-center justify-between hover:bg-gray-50 ${esDestino ? 'bg-blue-50' : ''}`}>
-                          <div className="flex items-center space-x-4">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${esDestino ? 'bg-blue-200' : 'bg-blue-100'}`}>
-                              <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
-                                {esDestino && <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">Principal</span>}
-                              </div>
-                              <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
-                                {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
-                                {c.customer_number && <span>Customer: {c.customer_number}</span>}
-                                <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => {
-                                const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
-                                setClienteSeleccionado(clienteObj);
-                                setVistaActual('expediente');
-                              }}
-                              disabled={mergeEnProgreso}
-                              className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50 disabled:opacity-50">
-                              Ver expediente
-                            </button>
-                            <button
-                              onClick={() => setModalActivo('mergeClientes')}
-                              disabled={mergeEnProgreso}
-                              className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50 disabled:opacity-50">
-                              Fusionar
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
+                      {dup.cantidad_clientes} clientes
+                    </span>
                   </div>
                 </div>
-              );
-            })}
+                <div className="divide-y">
+                  {(dup.clientes || []).map((c, cidx) => (
+                    <div key={cidx} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
+                          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                            {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
+                            {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
+                            {c.customer_number && <span>Customer: {c.customer_number}</span>}
+                            <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
+                            setClienteSeleccionado(clienteObj);
+                            setVistaActual('expediente');
+                          }}
+                          className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50"
+                        >
+                          Ver expediente
+                        </button>
+                        <button
+                          onClick={() => {
+                            setModalActivo('mergeClientes');
+                          }}
+                          className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50"
+                        >
+                          Fusionar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
 
             {/* Paginación */}
             {totalPags > 1 && (
               <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border p-4">
-                <button onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
-                  disabled={paginaDup === 0 || mergeEnProgreso}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">
+                <button
+                  onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
+                  disabled={paginaDup === 0}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
+                >
                   ← Anterior
                 </button>
                 <span className="text-sm text-gray-500">
-                  Página {paginaDup + 1} de {totalPags} · {totalDup} PINs compartidos
-                  {gruposSeleccionados.size > 0 && <span className="ml-2 text-orange-600 font-medium">· {gruposSeleccionados.size} seleccionados</span>}
+                  Página {paginaDup + 1} de {totalPags} ({totalDup} PINs compartidos)
                 </span>
-                <button onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
-                  disabled={paginaDup >= totalPags - 1 || mergeEnProgreso}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">
+                <button
+                  onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
+                  disabled={paginaDup >= totalPags - 1}
+                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
+                >
                   Siguiente →
                 </button>
               </div>
@@ -5296,24 +5109,15 @@ export default function PTRSSystem() {
       setErrorReporte(null);
       
       try {
-        const rpcFetch = (nombre) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${nombre}`, {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
-            'Content-Type': 'application/json',
-            'Range-Unit': 'items',
-            'Range': '0-29999',
-            'Prefer': 'count=exact'
-          },
-          body: JSON.stringify({})
-        }).then(r => r.json());
-
-        const [pendientesResult, townshipResult, regionResult] = await Promise.all([
-          rpcFetch('get_clientes_pendientes_aplicar'),
-          rpcFetch('get_resumen_pendientes_por_township'),
-          rpcFetch('get_resumen_pendientes_por_region'),
+        const [resPendientes, resTownship, resRegion] = await Promise.all([
+          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
+          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
+          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
         ]);
+
+        const pendientesResult = await resPendientes.json();
+        const townshipResult = await resTownship.json();
+        const regionResult = await resRegion.json();
 
         setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
         setResumenTownship(Array.isArray(townshipResult) ? townshipResult : []);
@@ -5326,40 +5130,28 @@ export default function PTRSSystem() {
       }
     };
 
-    // Calcula el ciclo activo de cada región según el año actual
-    // Cook County rota cada 3 años: SW=2023,2026,2029... Chicago=2024,2027... North=2025,2028...
-    const getCurrentCiclo = (baseYear) => {
-      const currentYear = new Date().getFullYear();
-      const elapsed = currentYear - baseYear;
-      return baseYear + Math.floor(elapsed / 3) * 3;
-    };
-
-    const SW_CICLO     = getCurrentCiclo(2023); // 2026 en 2026, 2029 en 2029...
-    const CHI_CICLO    = getCurrentCiclo(2024); // 2024 en 2026, 2027 en 2027...
-    const NORTH_CICLO  = getCurrentCiclo(2025); // 2025 en 2026, 2028 en 2028...
-
-    // Los 6 ciclos cubiertos (3 pasados/presentes + 3 futuros)
+    // CORRECCIÓN 1: Ciclos hardcodeados para los 3 ciclos de Cook County
+    // No depende de los datos existentes en BD
     const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
 
-    // Regiones con el año de ciclo actual calculado dinámicamente
+    // CORRECCIÓN 2: Regiones hardcodeadas con labels amigables
     const REGIONES_COOK_COUNTY = [
-      { value: 'south_west', label: `South-West (Ciclo ${SW_CICLO})`,  base: 2023 },
-      { value: 'chicago',    label: `Chicago (Ciclo ${CHI_CICLO})`,     base: 2024 },
-      { value: 'north',      label: `North (Ciclo ${NORTH_CICLO})`,     base: 2025 },
+      { value: 'south_west', label: 'South-West (Ciclo 2023)' },
+      { value: 'chicago', label: 'Chicago (Ciclo 2024)' },
+      { value: 'north', label: 'North (Ciclo 2025)' },
     ];
-
-    // El RPC ya devuelve cur_ciclo directamente (2023, 2024, 2025, 2026, 2027, 2028)
-    // No necesita mapeo — comparación directa
-    const cicloABase = (ciclo) => ciclo;
 
     // CORRECCIÓN 3: Townships cargados de la tabla completa (state "townships" ya existe en el componente padre)
     // Ordenados alfabéticamente
     const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
 
+    // Mapa ciclos futuros a ciclo base en BD (2026=SW=2023, 2027=Chicago=2024, 2028=North=2025)
+    const CICLO_FUTURO_A_BASE = { 2026: 2023, 2027: 2024, 2028: 2025 };
+
     const datosFiltrados = pendientesData.filter(p => {
       if (filtrosReporte.ciclo !== 'todos') {
         const cicloSeleccionado = parseInt(filtrosReporte.ciclo);
-        const cicloBase = cicloABase(cicloSeleccionado);
+        const cicloBase = CICLO_FUTURO_A_BASE[cicloSeleccionado] || cicloSeleccionado;
         if (p.ciclo_revaluacion !== cicloBase) return false;
       }
       if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
@@ -5862,7 +5654,6 @@ export default function PTRSSystem() {
   };
 
   return (
-    <ErrorBoundary>
     <div className="min-h-screen bg-gray-100">
       <Sidebar />
       
@@ -5958,7 +5749,6 @@ export default function PTRSSystem() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setMenuAbierto(false)}></div>
       )}
     </div>
-    </ErrorBoundary>
   );
 }
 
