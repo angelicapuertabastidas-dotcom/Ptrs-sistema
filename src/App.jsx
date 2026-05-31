@@ -4839,703 +4839,265 @@ export default function PTRSSystem() {
     const [loadingDup, setLoadingDup] = useState(false);
     const [paginaDup, setPaginaDup] = useState(0);
     const [totalDup, setTotalDup] = useState(0);
+    const [gruposSeleccionados, setGruposSeleccionados] = useState(new Set());
+    const [mergeEnProgreso, setMergeEnProgreso] = useState(false);
+    const [progreso, setProgreso] = useState({ actual: 0, total: 0, log: [], errores: 0 });
+    const [resultadoFinal, setResultadoFinal] = useState(null);
+    const [modoDup, setModoDup] = useState('nombre');
     const DUP_POR_PAGINA = 20;
 
-    useEffect(() => {
-      cargarDuplicados();
-    }, []);
+    useEffect(() => { cargarDuplicados(modoDup); }, [modoDup]);
 
-    const cargarDuplicados = async () => {
+    const cargarDuplicados = async (modo = modoDup) => {
       setLoadingDup(true);
+      setGruposSeleccionados(new Set());
+      setResultadoFinal(null);
       try {
-        // Buscar PINs que aparecen en más de un cliente
-        const res = await api('rpc/detectar_duplicados_por_pin', {
+        const rpc = modo === 'pin' ? 'detectar_duplicados_por_pin' : 'detectar_duplicados_por_nombre_telefono';
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
           method: 'POST',
-          body: {},
-          token,
-          headers: { 'Range-Unit': 'items', 'Range': '0-9999' }
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+            'Content-Type': 'application/json',
+            'Prefer': 'count=exact',
+            'Range-Unit': 'items',
+            'Range': '0-9999'
+          },
+          body: JSON.stringify({})
         });
         const data = await res.json();
         if (Array.isArray(data)) {
           setDuplicados(data);
           setTotalDup(data.length);
+        } else {
+          setDuplicados([]);
+          setTotalDup(0);
         }
-      } catch (e) {
-        console.error('Error cargando duplicados:', e);
-      }
+      } catch (e) { console.error('Error cargando duplicados:', e); }
       setLoadingDup(false);
+    };
+
+    const grupoKey = (dup) => modoDup === 'pin' ? dup.pin : `${dup.nombre_completo}||${dup.telefono}`;
+
+    const elegirDestino = (clientes) => {
+      return [...clientes].sort((a, b) => {
+        const numA = parseInt((a.numero_cliente || '').replace(/\D/g, '')) || 99999;
+        const numB = parseInt((b.numero_cliente || '').replace(/\D/g, '')) || 99999;
+        if (numA !== numB) return numA - numB;
+        return (b.total_propiedades || 0) - (a.total_propiedades || 0);
+      })[0];
+    };
+
+    const toggleGrupo = (dup) => {
+      const key = grupoKey(dup);
+      setGruposSeleccionados(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+    };
+
+    const seleccionarTodosEnPagina = () => {
+      const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
+      setGruposSeleccionados(prev => {
+        const next = new Set(prev);
+        paginados.forEach(d => next.add(grupoKey(d)));
+        return next;
+      });
+    };
+
+    const deseleccionarTodos = () => setGruposSeleccionados(new Set());
+
+    const ejecutarMergeMasivo = async () => {
+      const gruposParaMerge = duplicados.filter(d => gruposSeleccionados.has(grupoKey(d)));
+      if (gruposParaMerge.length === 0) return;
+      const confirmado = window.confirm(`¿Fusionar ${gruposParaMerge.length} grupos?\n\nSe fusionarán al expediente más antiguo (PTRS # más bajo). Esta acción no se puede deshacer.`);
+      if (!confirmado) return;
+      setMergeEnProgreso(true);
+      setResultadoFinal(null);
+      let exitosos = 0, errores = 0;
+      const logEntradas = [];
+      setProgreso({ actual: 0, total: gruposParaMerge.length, log: [], errores: 0 });
+
+      for (let i = 0; i < gruposParaMerge.length; i++) {
+        const grupo = gruposParaMerge[i];
+        const clientes = grupo.clientes || [];
+        if (clientes.length < 2) continue;
+        const destino = elegirDestino(clientes);
+        const origenes = clientes.filter(c => c.cliente_id !== destino.cliente_id);
+        for (const origen of origenes) {
+          try {
+            await mergeClientes(destino.cliente_id, origen.cliente_id, origen);
+            exitosos++;
+          } catch (e) {
+            errores++;
+            logEntradas.push(`❌ Error: ${origen.nombre} ${origen.apellido}`);
+          }
+        }
+        setProgreso(prev => ({
+          actual: i + 1, total: gruposParaMerge.length,
+          log: [...logEntradas.slice(-5)], errores
+        }));
+      }
+
+      setMergeEnProgreso(false);
+      setResultadoFinal({ exitosos, errores });
+      setGruposSeleccionados(new Set());
+      cargarDuplicados(modoDup);
     };
 
     const paginados = duplicados.slice(paginaDup * DUP_POR_PAGINA, (paginaDup + 1) * DUP_POR_PAGINA);
     const totalPags = Math.ceil(totalDup / DUP_POR_PAGINA);
 
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">🔍 Posibles Duplicados</h1>
-            <p className="text-gray-500 mt-1">Clientes que comparten PINs — revisa y fusiona si corresponde</p>
+            <p className="text-gray-500 mt-1">Detecta y fusiona registros duplicados del mismo cliente</p>
           </div>
-          <button
-            onClick={cargarDuplicados}
-            disabled={loadingDup}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button onClick={() => cargarDuplicados(modoDup)} disabled={loadingDup || mergeEnProgreso}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {loadingDup ? 'Buscando...' : '🔄 Actualizar'}
           </button>
         </div>
 
-        {/* Resumen */}
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-          <p className="text-orange-800 font-medium">
-            ⚠️ Se encontraron <strong>{totalDup}</strong> PINs compartidos entre clientes diferentes.
-            Esto puede indicar duplicados, cambios de nombre o propiedades que pasaron a otra persona.
-          </p>
+        <div className="flex gap-2 bg-white rounded-xl shadow-sm border p-1 w-fit">
+          <button onClick={() => { setModoDup('nombre'); setPaginaDup(0); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'nombre' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+            👤 Por Nombre + Teléfono
+          </button>
+          <button onClick={() => { setModoDup('pin'); setPaginaDup(0); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${modoDup === 'pin' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+            📍 Por PIN Compartido
+          </button>
         </div>
 
         {loadingDup ? (
-          <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-            <p className="text-gray-500">Buscando duplicados...</p>
+          <div className="text-center py-12 text-gray-500">⏳ Buscando duplicados...</div>
+        ) : totalDup === 0 ? (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
+            <p className="text-green-700 font-medium text-lg">✅ No se encontraron duplicados</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {paginados.map((dup, idx) => (
-              <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="p-4 bg-orange-50 border-b border-orange-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono font-bold text-orange-800">{dup.pin}</span>
-                      <span className="ml-3 text-sm text-orange-600">{dup.direccion || 'Sin dirección'}</span>
-                    </div>
-                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">
-                      {dup.cantidad_clientes} clientes
-                    </span>
-                  </div>
+          <>
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+              <p className="text-orange-800 font-medium">
+                ⚠️ Se encontraron <strong>{totalDup}</strong> {modoDup === 'pin' ? 'PINs compartidos' : 'grupos con mismo nombre y teléfono'}.
+              </p>
+            </div>
+
+            {!mergeEnProgreso && !resultadoFinal && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={seleccionarTodosEnPagina}
+                  className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-sm hover:bg-orange-200">
+                  ☑️ Seleccionar página ({Math.min(DUP_POR_PAGINA, totalDup - paginaDup * DUP_POR_PAGINA)})
+                </button>
+                {gruposSeleccionados.size > 0 && (
+                  <>
+                    <button onClick={deseleccionarTodos}
+                      className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">
+                      ✕ Deseleccionar ({gruposSeleccionados.size})
+                    </button>
+                    <button onClick={ejecutarMergeMasivo}
+                      className="px-4 py-1.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700">
+                      🔀 Fusionar {gruposSeleccionados.size} grupos seleccionados
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {mergeEnProgreso && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="font-medium text-blue-800">Fusionando {progreso.actual}/{progreso.total}...</span>
                 </div>
-                <div className="divide-y">
-                  {(dup.clientes || []).map((c, cidx) => (
-                    <div key={cidx} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 font-bold text-sm">{c.nombre?.[0] || '?'}</span>
-                        </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full transition-all"
+                    style={{width: `${progreso.total > 0 ? (progreso.actual/progreso.total*100) : 0}%`}}></div>
+                </div>
+              </div>
+            )}
+
+            {resultadoFinal && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <p className="text-green-800 font-medium">
+                  ✅ Completado: {resultadoFinal.exitosos} fusiones exitosas
+                  {resultadoFinal.errores > 0 && ` | ${resultadoFinal.errores} errores`}
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {paginados.map((dup, idx) => {
+                const key = grupoKey(dup);
+                const seleccionado = gruposSeleccionados.has(key);
+                const destino = elegirDestino(dup.clientes || []);
+                return (
+                  <div key={idx} className={`bg-white rounded-xl shadow-sm border overflow-hidden ${seleccionado ? 'ring-2 ring-orange-400' : ''}`}>
+                    <div className={`p-4 border-b flex items-center gap-3 ${seleccionado ? 'bg-orange-100 border-orange-300' : 'bg-orange-50 border-orange-200'}`}>
+                      <input type="checkbox" checked={seleccionado} onChange={() => toggleGrupo(dup)}
+                        disabled={mergeEnProgreso} className="w-4 h-4 accent-orange-600 cursor-pointer flex-shrink-0" />
+                      <div className="flex-1 flex items-center justify-between">
                         <div>
-                          <p className="font-medium text-gray-900">{c.nombre} {c.apellido}</p>
-                          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                            {c.numero_cliente && <span className="text-green-600 font-medium">{c.numero_cliente}</span>}
-                            {c.telefono_principal && <span>📞 {c.telefono_principal}</span>}
-                            {c.customer_number && <span>Customer: {c.customer_number}</span>}
-                            <span>{c.total_propiedades} prop · {c.total_facturas} fact</span>
-                          </div>
+                          {modoDup === 'pin' ? (
+                            <span className="font-mono font-bold text-orange-800">{dup.pin} — {dup.direccion || 'Sin dirección'}</span>
+                          ) : (
+                            <><span className="font-bold text-orange-800">{dup.nombre_completo}</span>
+                            <span className="ml-3 text-sm text-orange-600">📞 {dup.telefono}</span></>
+                          )}
+                          {seleccionado && destino && (
+                            <span className="ml-3 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                              Principal: {destino.nombre} {destino.apellido} ({destino.numero_cliente})
+                            </span>
+                          )}
                         </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            const clienteObj = { id: c.cliente_id, nombre: c.nombre, apellido: c.apellido, telefono_principal: c.telefono_principal, customer_number: c.customer_number, numero_cliente: c.numero_cliente };
-                            setClienteSeleccionado(clienteObj);
-                            setVistaActual('expediente');
-                          }}
-                          className="px-3 py-1 border border-blue-300 text-blue-600 rounded text-xs hover:bg-blue-50"
-                        >
-                          Ver expediente
-                        </button>
-                        <button
-                          onClick={() => {
-                            setModalActivo('mergeClientes');
-                          }}
-                          className="px-3 py-1 border border-orange-300 text-orange-600 rounded text-xs hover:bg-orange-50"
-                        >
-                          Fusionar
-                        </button>
+                        <span className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">{dup.cantidad_clientes} registros</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                    <div className="divide-y">
+                      {(dup.clientes || []).map((c, ci) => (
+                        <div key={ci} className="px-4 py-2 flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            {destino && c.cliente_id === destino.cliente_id && (
+                              <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Principal</span>
+                            )}
+                            <span className="font-medium">{c.nombre} {c.apellido}</span>
+                            <span className="text-gray-400">{c.numero_cliente}</span>
+                            {c.customer_number && <span className="text-gray-400 text-xs">Cust:{c.customer_number}</span>}
+                          </div>
+                          <div className="flex items-center gap-3 text-gray-500">
+                            <span>🏠 {c.total_propiedades || 0}</span>
+                            <span>📄 {c.total_facturas || 0}</span>
+                            <button onClick={() => { setClienteSeleccionado({ id: c.cliente_id }); setVistaActual('expediente'); }}
+                              className="text-blue-600 hover:underline text-xs">Ver</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-            {/* Paginación */}
             {totalPags > 1 && (
-              <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border p-4">
-                <button
-                  onClick={() => setPaginaDup(p => Math.max(0, p - 1))}
-                  disabled={paginaDup === 0}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
-                >
-                  ← Anterior
-                </button>
-                <span className="text-sm text-gray-500">
-                  Página {paginaDup + 1} de {totalPags} ({totalDup} PINs compartidos)
-                </span>
-                <button
-                  onClick={() => setPaginaDup(p => Math.min(totalPags - 1, p + 1))}
-                  disabled={paginaDup >= totalPags - 1}
-                  className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
-                >
-                  Siguiente →
-                </button>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <button onClick={() => setPaginaDup(Math.max(0, paginaDup-1))} disabled={paginaDup === 0}
+                  className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">← Anterior</button>
+                <span className="text-sm text-gray-600">Pág {paginaDup+1} de {totalPags} ({totalDup} grupos)</span>
+                <button onClick={() => setPaginaDup(Math.min(totalPags-1, paginaDup+1))} disabled={paginaDup >= totalPags-1}
+                  className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">Siguiente →</button>
               </div>
             )}
-
-            {duplicados.length === 0 && !loadingDup && (
-              <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-                <p className="text-green-600 font-medium">✅ No se encontraron PINs compartidos entre clientes.</p>
-              </div>
-            )}
-          </div>
+          </>
         )}
       </div>
     );
   };
 
-  // ========== REPORTE CLIENTES PENDIENTES POR TRIENIO ==========
-  const ReportePendientesTrienio = () => {
-    const [pendientesData, setPendientesData] = useState([]);
-    const [resumenTownship, setResumenTownship] = useState([]);
-    const [resumenRegion, setResumenRegion] = useState([]);
-    const [loadingReporte, setLoadingReporte] = useState(true);
-    const [errorReporte, setErrorReporte] = useState(null);
-    const [vistaReporte, setVistaReporte] = useState('detalle');
-    const [filtrosReporte, setFiltrosReporte] = useState({
-      ciclo: 'todos',
-      region: 'todas',
-      township: 'todos'
-    });
-
-    useEffect(() => {
-      cargarDatosReporte();
-    }, []);
-
-    const cargarDatosReporte = async () => {
-      setLoadingReporte(true);
-      setErrorReporte(null);
-      
-      try {
-        const [resPendientes, resTownship, resRegion] = await Promise.all([
-          api('rpc/get_clientes_pendientes_aplicar', { method: 'POST', body: {}, token }),
-          api('rpc/get_resumen_pendientes_por_township', { method: 'POST', body: {}, token }),
-          api('rpc/get_resumen_pendientes_por_region', { method: 'POST', body: {}, token })
-        ]);
-
-        const pendientesResult = await resPendientes.json();
-        const townshipResult = await resTownship.json();
-        const regionResult = await resRegion.json();
-
-        setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
-        setResumenTownship(Array.isArray(townshipResult) ? townshipResult : []);
-        setResumenRegion(Array.isArray(regionResult) ? regionResult : []);
-      } catch (err) {
-        console.error('Error cargando datos:', err);
-        setErrorReporte(err.message);
-      } finally {
-        setLoadingReporte(false);
-      }
-    };
-
-    // CORRECCIÓN 1: Ciclos hardcodeados para los 3 ciclos de Cook County
-    // No depende de los datos existentes en BD
-    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
-
-    // CORRECCIÓN 2: Regiones hardcodeadas con labels amigables
-    const REGIONES_COOK_COUNTY = [
-      { value: 'south_west', label: 'South-West (Ciclo 2023)' },
-      { value: 'chicago', label: 'Chicago (Ciclo 2024)' },
-      { value: 'north', label: 'North (Ciclo 2025)' },
-    ];
-
-    // CORRECCIÓN 3: Townships cargados de la tabla completa (state "townships" ya existe en el componente padre)
-    // Ordenados alfabéticamente
-    const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-    // Mapa ciclos futuros a ciclo base en BD (2026=SW=2023, 2027=Chicago=2024, 2028=North=2025)
-    const CICLO_FUTURO_A_BASE = { 2026: 2023, 2027: 2024, 2028: 2025 };
-
-    const datosFiltrados = pendientesData.filter(p => {
-      if (filtrosReporte.ciclo !== 'todos') {
-        const cicloSeleccionado = parseInt(filtrosReporte.ciclo);
-        const cicloBase = CICLO_FUTURO_A_BASE[cicloSeleccionado] || cicloSeleccionado;
-        if (p.ciclo_revaluacion !== cicloBase) return false;
-      }
-      if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
-      if (filtrosReporte.township !== 'todos' && p.township_nombre !== filtrosReporte.township) return false;
-      return true;
-    });
-
-    const clientesAgrupados = datosFiltrados.reduce((acc, item) => {
-      if (!acc[item.cliente_id]) {
-        acc[item.cliente_id] = { ...item, propiedades: [] };
-      }
-      acc[item.cliente_id].propiedades.push({
-        id: item.propiedad_id,
-        pin: item.propiedad_pin,
-        direccion: item.propiedad_direccion,
-        township: item.township_nombre
-      });
-      return acc;
-    }, {});
-
-    const getColorCiclo = (ciclo) => {
-      switch(ciclo) {
-        case 2023: return 'bg-orange-100 text-orange-800 border-orange-300';
-        case 2024: return 'bg-blue-100 text-blue-800 border-blue-300';
-        case 2025: return 'bg-green-100 text-green-800 border-green-300';
-        default: return 'bg-gray-100 text-gray-800 border-gray-300';
-      }
-    };
-
-    const getColorRegion = (region) => {
-      switch(region) {
-        case 'south_west': return 'bg-orange-50 border-l-4 border-orange-500';
-        case 'chicago': return 'bg-blue-50 border-l-4 border-blue-500';
-        case 'north': return 'bg-green-50 border-l-4 border-green-500';
-        default: return 'bg-gray-50 border-l-4 border-gray-500';
-      }
-    };
-
-    const getColorFaltantes = (cantidad) => {
-      if (cantidad >= 3) return 'bg-red-500 text-white';
-      if (cantidad === 2) return 'bg-orange-500 text-white';
-      return 'bg-yellow-500 text-white';
-    };
-
-    const exportarCSV = () => {
-      const headers = [
-        'Cliente', 'Email', 'Teléfono', 'PIN', 'Dirección', 
-        'Township', 'Región', 'Ciclo', 'Próx. Revaluación',
-        'Años Trienio', 'Años Facturados', 'Años Faltantes', 'Cant. Faltantes'
-      ];
-      
-      const rows = datosFiltrados.map(p => [
-        (p.cliente_nombre || '') + ' ' + (p.cliente_apellido || ''),
-        p.cliente_email || '',
-        p.cliente_telefono || '',
-        p.propiedad_pin || '',
-        p.propiedad_direccion || '',
-        p.township_nombre || '',
-        p.township_region || '',
-        p.ciclo_revaluacion || '',
-        p.proxima_revaluacion || '',
-        p.anios_trienio || '',
-        p.anios_facturados || '',
-        p.anios_faltantes || '',
-        p.cantidad_faltantes || ''
-      ]);
-
-      const csv = [headers.join(','), ...rows.map(r => r.map(c => '"' + c + '"').join(','))].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'clientes_pendientes_' + new Date().toISOString().split('T')[0] + '.csv';
-      a.click();
-    };
-
-    const abrirExpediente = (clienteId) => {
-      api('clientes?id=eq.' + clienteId + '&select=*,propiedades(*)', { token })
-        .then(res => res.json())
-        .then(data => {
-          if (data && data[0]) {
-            setClienteSeleccionado(data[0]);
-            setVistaActual('expediente');
-          }
-        });
-    };
-
-    if (loadingReporte) {
-      return (
-        <div className="flex items-center justify-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-600">Cargando reporte...</span>
-        </div>
-      );
-    }
-
-    if (errorReporte) {
-      return (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="text-red-800 font-medium">Error al cargar el reporte</h3>
-          <p className="text-red-600 text-sm mt-1">{errorReporte}</p>
-          <button onClick={cargarDatosReporte} className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-            Reintentar
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">📋 Clientes Pendientes por Aplicar</h1>
-          <p className="text-gray-600 mt-1">Clientes que no han aplicado para todos los años de su ciclo de revaluación</p>
-        </div>
-
-        {/* Resumen rápido */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
-            <div className="text-3xl font-bold text-blue-600">{Object.keys(clientesAgrupados).length}</div>
-            <div className="text-sm text-gray-600">Clientes con años faltantes</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
-            <div className="text-3xl font-bold text-orange-600">{datosFiltrados.length}</div>
-            <div className="text-sm text-gray-600">Propiedades afectadas</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-red-500">
-            <div className="text-3xl font-bold text-red-600">
-              {datosFiltrados.reduce((sum, p) => sum + (p.cantidad_faltantes || 0), 0)}
-            </div>
-            <div className="text-sm text-gray-600">Total años faltantes</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
-            <div className="text-3xl font-bold text-green-600">{todosLosTownships.length}</div>
-            <div className="text-sm text-gray-600">Townships afectados</div>
-          </div>
-        </div>
-
-        {/* Controles */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button onClick={() => setVistaReporte('detalle')}
-                className={'px-4 py-2 text-sm font-medium ' + (vistaReporte === 'detalle' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
-                📝 Detalle
-              </button>
-              <button onClick={() => setVistaReporte('township')}
-                className={'px-4 py-2 text-sm font-medium border-l ' + (vistaReporte === 'township' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
-                🏘️ Por Township
-              </button>
-              <button onClick={() => setVistaReporte('region')}
-                className={'px-4 py-2 text-sm font-medium border-l ' + (vistaReporte === 'region' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
-                🗺️ Por Región
-              </button>
-            </div>
-
-            {/* CORRECCIÓN 1: Ciclos hardcodeados - siempre muestra 2023, 2024, 2025 */}
-            <select value={filtrosReporte.ciclo} onChange={(e) => setFiltrosReporte({...filtrosReporte, ciclo: e.target.value})}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="todos">Todos los ciclos</option>
-              {CICLOS_COOK_COUNTY.map(c => (
-                <option key={c} value={c}>Ciclo {c}</option>
-              ))}
-            </select>
-
-            {/* CORRECCIÓN 2: Regiones hardcodeadas con multi-select */}
-            <select value={filtrosReporte.region} onChange={(e) => setFiltrosReporte({...filtrosReporte, region: e.target.value, township: 'todos'})}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="todas">Todas las regiones</option>
-              {REGIONES_COOK_COUNTY.map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-
-            {/* CORRECCIÓN 3: Townships de la tabla completa, filtrados por región si se seleccionó una */}
-            <select value={filtrosReporte.township} onChange={(e) => setFiltrosReporte({...filtrosReporte, township: e.target.value})}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="todos">Todos los townships</option>
-              {todosLosTownships
-                .filter(t => {
-                  // Si hay región seleccionada, mostrar solo los townships de esa región
-                  if (filtrosReporte.region !== 'todas') {
-                    return t.region === filtrosReporte.region;
-                  }
-                  return true;
-                })
-                .map(t => (
-                  <option key={t.id} value={t.nombre}>{t.nombre}</option>
-                ))}
-            </select>
-
-            <button onClick={exportarCSV} className="ml-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
-              📥 Exportar CSV
-            </button>
-
-            <button onClick={cargarDatosReporte} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">
-              🔄 Actualizar
-            </button>
-          </div>
-        </div>
-
-        {/* Vista Detalle */}
-        {vistaReporte === 'detalle' && (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Propiedad</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Township</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Ciclo</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Años Trienio</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Facturados</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Faltantes</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {datosFiltrados.map((item, idx) => (
-                    <tr key={item.cliente_id + '-' + item.propiedad_id + '-' + idx} className={getColorRegion(item.township_region)}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{item.cliente_nombre} {item.cliente_apellido}</div>
-                        <div className="text-xs text-gray-500">{item.cliente_email}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-mono text-sm text-gray-900">{item.propiedad_pin}</div>
-                        <div className="text-xs text-gray-500">{item.propiedad_direccion}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{item.township_nombre}</div>
-                        <div className="text-xs text-gray-500">{item.township_region}</div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ' + getColorCiclo(item.ciclo_revaluacion)}>
-                          {item.ciclo_revaluacion}
-                        </span>
-                        <div className="text-xs text-gray-500 mt-1">Próx: {item.proxima_revaluacion}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1 flex-wrap">
-                          {(item.anios_trienio || '').split(', ').filter(Boolean).map(a => (
-                            <span key={a} className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded">{a}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.anios_facturados ? (
-                          <div className="flex gap-1 flex-wrap">
-                            {item.anios_facturados.split(',').map((a, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">✓ {a.trim()}</span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">Sin facturas</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className={'px-2 py-1 rounded text-xs font-bold ' + getColorFaltantes(item.cantidad_faltantes)}>
-                            {item.cantidad_faltantes}
-                          </span>
-                          <div className="flex gap-1 flex-wrap">
-                            {(item.anios_faltantes || '').split(', ').filter(Boolean).map((a, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded font-medium">⚠️ {a}</span>
-                            ))}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button onClick={() => abrirExpediente(item.cliente_id)}
-                          className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                          Ver
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {datosFiltrados.length === 0 && (
-              <div className="text-center py-8 text-gray-500">No hay clientes pendientes con los filtros seleccionados</div>
-            )}
-          </div>
-        )}
-
-        {/* Vista por Township - CORRECCIÓN 4: tarjetas clickeables */}
-        {vistaReporte === 'township' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {resumenTownship.length > 0 ? resumenTownship.map((t, idx) => (
-              // CORRECCIÓN 4: onClick para navegar a la vista detalle filtrada por este township
-              <div
-                key={t.township_nombre + '-' + idx}
-                className={'bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-150 ' + getColorRegion(t.region)}
-                onClick={() => {
-                  setFiltrosReporte({
-                    ciclo: t.ciclo ? String(t.ciclo) : 'todos',
-                    region: t.region || 'todas',
-                    township: t.township_nombre || 'todos'
-                  });
-                  setVistaReporte('detalle');
-                }}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-800">{t.township_nombre}</h3>
-                  <span className={'px-2 py-1 rounded text-xs font-medium ' + getColorCiclo(t.ciclo)}>Ciclo {t.ciclo}</span>
-                </div>
-                <div className="text-sm text-gray-600 mb-2">{t.region}</div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="bg-white bg-opacity-50 rounded p-2">
-                    <div className="text-2xl font-bold text-blue-600">{t.clientes_con_faltantes}</div>
-                    <div className="text-xs text-gray-500">Clientes</div>
-                  </div>
-                  <div className="bg-white bg-opacity-50 rounded p-2">
-                    <div className="text-2xl font-bold text-orange-600">{t.propiedades_pendientes}</div>
-                    <div className="text-xs text-gray-500">Propiedades</div>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-blue-600 font-medium text-right">
-                  Ver detalle →
-                </div>
-              </div>
-            )) : (
-              // Si el RPC no devuelve datos, mostrar los townships de la tabla con datos de pendientesData
-              todosLosTownships.map((t, idx) => {
-                const pendientesTwp = pendientesData.filter(p => p.township_nombre === t.nombre);
-                if (pendientesTwp.length === 0) return null;
-                const clientesUnicos = new Set(pendientesTwp.map(p => p.cliente_id)).size;
-                return (
-                  <div
-                    key={t.id + '-' + idx}
-                    className={'bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-150 ' + getColorRegion(t.region)}
-                    onClick={() => {
-                      setFiltrosReporte({
-                        ciclo: 'todos',
-                        region: t.region || 'todas',
-                        township: t.nombre
-                      });
-                      setVistaReporte('detalle');
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-gray-800">{t.nombre}</h3>
-                      <span className={'px-2 py-1 rounded text-xs font-medium ' + getColorCiclo(t.ciclo_revaluacion)}>Ciclo {t.ciclo_revaluacion}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 mb-2">{t.region}</div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="bg-white bg-opacity-50 rounded p-2">
-                        <div className="text-2xl font-bold text-blue-600">{clientesUnicos}</div>
-                        <div className="text-xs text-gray-500">Clientes</div>
-                      </div>
-                      <div className="bg-white bg-opacity-50 rounded p-2">
-                        <div className="text-2xl font-bold text-orange-600">{pendientesTwp.length}</div>
-                        <div className="text-xs text-gray-500">Propiedades</div>
-                      </div>
-                    </div>
-                    <div className="mt-3 text-xs text-blue-600 font-medium text-right">
-                      Ver detalle →
-                    </div>
-                  </div>
-                );
-              }).filter(Boolean)
-            )}
-          </div>
-        )}
-
-        {/* Vista por Región */}
-        {vistaReporte === 'region' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {resumenRegion.length > 0 ? resumenRegion.map((r, idx) => (
-              <div key={r.region + '-' + r.ciclo + '-' + idx} className={'bg-white rounded-lg shadow-lg p-6 ' + getColorRegion(r.region)}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">{r.region}</h3>
-                  <span className={'px-3 py-1 rounded-full text-sm font-medium ' + getColorCiclo(r.ciclo)}>Ciclo {r.ciclo}</span>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                    <span className="text-gray-600">Townships afectados</span>
-                    <span className="text-2xl font-bold text-purple-600">{r.townships_afectados}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                    <span className="text-gray-600">Total clientes</span>
-                    <span className="text-2xl font-bold text-blue-600">{r.total_clientes}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                    <span className="text-gray-600">Total propiedades</span>
-                    <span className="text-2xl font-bold text-orange-600">{r.total_propiedades}</span>
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-sm text-gray-500">Próxima revaluación: <strong>{r.ciclo + 3}</strong></div>
-                  <div className="text-sm text-gray-500">Años del trienio: <strong>{r.ciclo}, {r.ciclo + 1}, {r.ciclo + 2}</strong></div>
-                </div>
-              </div>
-            )) : (
-              // Fallback: mostrar resumen calculado de los datos disponibles
-              REGIONES_COOK_COUNTY.map((region, idx) => {
-                const datoRegion = pendientesData.filter(p => p.township_region === region.value);
-                if (datoRegion.length === 0) return null;
-                const clientesRegion = new Set(datoRegion.map(p => p.cliente_id)).size;
-                const townshipsRegion = new Set(datoRegion.map(p => p.township_nombre)).size;
-                const cicloRegion = datoRegion[0]?.ciclo_revaluacion;
-                return (
-                  <div key={region.value + '-' + idx} className={'bg-white rounded-lg shadow-lg p-6 ' + getColorRegion(region.value)}>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xl font-bold text-gray-800">{region.value}</h3>
-                      {cicloRegion && <span className={'px-3 py-1 rounded-full text-sm font-medium ' + getColorCiclo(cicloRegion)}>Ciclo {cicloRegion}</span>}
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                        <span className="text-gray-600">Townships afectados</span>
-                        <span className="text-2xl font-bold text-purple-600">{townshipsRegion}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                        <span className="text-gray-600">Total clientes</span>
-                        <span className="text-2xl font-bold text-blue-600">{clientesRegion}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-white bg-opacity-50 rounded-lg">
-                        <span className="text-gray-600">Total propiedades</span>
-                        <span className="text-2xl font-bold text-orange-600">{datoRegion.length}</span>
-                      </div>
-                    </div>
-                    {cicloRegion && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <div className="text-sm text-gray-500">Próxima revaluación: <strong>{cicloRegion + 3}</strong></div>
-                        <div className="text-sm text-gray-500">Años del trienio: <strong>{cicloRegion}, {cicloRegion + 1}, {cicloRegion + 2}</strong></div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }).filter(Boolean)
-            )}
-          </div>
-        )}
-
-        {/* Leyenda */}
-        <div className="mt-6 bg-gray-50 rounded-lg p-4">
-          <h4 className="font-medium text-gray-700 mb-2">📖 Leyenda de Colores</h4>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></span>
-              <span>Ciclo 2023 (South-West) — Próx. revaluación 2026</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></span>
-              <span>Ciclo 2024 (Chicago) — Próx. revaluación 2027</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
-              <span>Ciclo 2025 (North) — Próx. revaluación 2028</span>
-            </div>
-            <span className="text-gray-400">|</span>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></span>
-              <span>Ciclo 2026 (South-West) — Próx. revaluación 2029</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></span>
-              <span>Ciclo 2027 (Chicago) — Próx. revaluación 2030</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-green-100 border border-green-300 rounded"></span>
-              <span>Ciclo 2028 (North) — Próx. revaluación 2031</span>
-            </div>
-            <span className="text-gray-400">|</span>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-yellow-500 rounded"></span>
-              <span>1 año faltante</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-orange-500 rounded"></span>
-              <span>2 años faltantes</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-4 bg-red-500 rounded"></span>
-              <span>3 años faltantes</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
 
   // Render current view
