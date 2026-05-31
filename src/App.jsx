@@ -5018,14 +5018,39 @@ export default function PTRSSystem() {
             )}
 
             {mergeEnProgreso && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="font-medium text-blue-800">Fusionando {progreso.actual}/{progreso.total}...</span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full transition-all"
-                    style={{width: `${progreso.total > 0 ? (progreso.actual/progreso.total*100) : 0}%`}}></div>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-lg">Fusionando duplicados...</h3>
+                      <p className="text-sm text-gray-500">No cierres esta ventana</p>
+                    </div>
+                  </div>
+                  <div className="mb-3">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-600">Progreso</span>
+                      <span className="font-bold text-blue-600">{progreso.actual} de {progreso.total}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div className="bg-blue-600 h-4 rounded-full transition-all duration-300 flex items-center justify-center"
+                        style={{width: `${progreso.total > 0 ? Math.round(progreso.actual/progreso.total*100) : 0}%`, minWidth: progreso.actual > 0 ? '2rem' : '0'}}>
+                        {progreso.total > 0 && progreso.actual > 0 && (
+                          <span className="text-white text-xs font-bold">
+                            {Math.round(progreso.actual/progreso.total*100)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {progreso.errores > 0 && (
+                    <p className="text-xs text-red-500">⚠️ {progreso.errores} errores hasta ahora</p>
+                  )}
+                  {progreso.log.length > 0 && (
+                    <div className="mt-3 text-xs text-gray-500 space-y-1 max-h-20 overflow-y-auto">
+                      {progreso.log.map((l, i) => <p key={i}>{l}</p>)}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
