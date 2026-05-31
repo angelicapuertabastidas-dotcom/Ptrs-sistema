@@ -4928,7 +4928,12 @@ export default function PTRSSystem() {
         const origenes = clientes.filter(c => c.cliente_id !== destino.cliente_id);
         for (const origen of origenes) {
           try {
-            await mergeClientes(destino.cliente_id, origen.cliente_id, origen);
+            const origenObj = { id: origen.cliente_id, nombre: origen.nombre, apellido: origen.apellido,
+              numero_cliente: origen.numero_cliente, customer_number: origen.customer_number,
+              telefono_principal: origen.telefono_principal, email: origen.email };
+            const destinoObj = { id: destino.cliente_id, nombre: destino.nombre, apellido: destino.apellido,
+              numero_cliente: destino.numero_cliente };
+            await mergeClientes(origenObj, destinoObj);
             exitosos++;
           } catch (e) {
             errores++;
