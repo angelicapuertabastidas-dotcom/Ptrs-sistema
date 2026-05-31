@@ -912,6 +912,8 @@ export default function PTRSSystem() {
           updateData.es_residencial = [2, 3].includes(claseNum);
         }
         
+        console.log('DEBUG clase:', clasePropiedad, '| updateData:', JSON.stringify(updateData));
+        
         if (Object.keys(updateData).length > 0) {
           const updateRes = await api(`propiedades?id=eq.${propiedad.id}`, {
             method: 'PATCH',
