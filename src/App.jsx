@@ -100,6 +100,7 @@ export default function PTRSSystem() {
   const [vistaActual, setVistaActual] = useState('dashboard');
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState('');
+  const [ordenClientes, setOrdenClientes] = useState('nombre.asc');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [toast, setToast] = useState(null);
   const [modalActivo, setModalActivo] = useState(null);
@@ -255,7 +256,7 @@ export default function PTRSSystem() {
         }
       } else {
         // No search - paginated list
-        var url = 'clientes?select=*,propiedades(*)&order=nombre.asc&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientes + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
         var res = await api(url, { token: token });
         
         // Get total count from header
@@ -274,7 +275,7 @@ export default function PTRSSystem() {
       setClientes([]);
     }
     setLoading(false);
-  }, [token]);
+  }, [token, ordenClientes]);
 
   const loadTownships = useCallback(async () => {
     try {
@@ -1620,15 +1621,37 @@ export default function PTRSSystem() {
       </div>
       
       <div className="bg-white rounded-xl shadow-sm border">
-        <div className="p-4 border-b flex items-center justify-between">
-          <p className="text-sm text-gray-500">
-            {loading ? 'Buscando...' : `Mostrando ${clientes.length} de ${totalClientes.toLocaleString()} clientes`}
-          </p>
-          {totalPaginas > 1 && (
+        <div className="p-4 border-b flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
             <p className="text-sm text-gray-500">
-              Página {paginaActual + 1} de {totalPaginas}
+              {loading ? 'Buscando...' : `Mostrando ${clientes.length} de ${totalClientes.toLocaleString()} clientes`}
             </p>
-          )}
+            {!busqueda && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
+                📋 {totalClientes.toLocaleString()} expedientes en total
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Ordenar:</span>
+            <select
+              value={ordenClientes}
+              onChange={(e) => { setOrdenClientes(e.target.value); setPaginaActual(0); }}
+              className="text-sm border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="nombre.asc">A → Z</option>
+              <option value="nombre.desc">Z → A</option>
+              <option value="created_at.desc">Más recientes primero</option>
+              <option value="created_at.asc">Más antiguos primero</option>
+              <option value="numero_cliente.desc">PTRS # más alto</option>
+              <option value="numero_cliente.asc">PTRS # más bajo</option>
+            </select>
+            {totalPaginas > 1 && (
+              <p className="text-sm text-gray-500">
+                Pág. {paginaActual + 1} de {totalPaginas}
+              </p>
+            )}
+          </div>
         </div>
         <div className="divide-y max-h-[500px] overflow-y-auto">
           {clientes.map((cliente) => (
