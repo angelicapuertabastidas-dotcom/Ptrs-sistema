@@ -4919,6 +4919,7 @@ export default function PTRSSystem() {
       let exitosos = 0, errores = 0;
       const logEntradas = [];
       setProgreso({ actual: 0, total: gruposParaMerge.length, log: [], errores: 0 });
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       for (let i = 0; i < gruposParaMerge.length; i++) {
         const grupo = gruposParaMerge[i];
@@ -4944,6 +4945,8 @@ export default function PTRSSystem() {
           actual: i + 1, total: gruposParaMerge.length,
           log: [...logEntradas.slice(-5)], errores
         }));
+        // Permitir que React re-renderice entre grupos
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
 
       setMergeEnProgreso(false);
