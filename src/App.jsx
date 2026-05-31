@@ -386,6 +386,10 @@ export default function PTRSSystem() {
 
           const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)&limit=5000`, { token });
           const propiedades = await res.json();
+          if (!Array.isArray(propiedades)) {
+            console.error('Error loading pendientes: propiedades no es array', propiedades);
+            return;
+          }
           console.log('Propiedades en townships abiertos:', propiedades.length);
           
           const anioActual = new Date().getFullYear();
@@ -848,7 +852,7 @@ export default function PTRSSystem() {
           townshipNombre = info.township_name || '';
           ciudad = info.prop_address_city_name || '';
           zip = info.prop_address_zipcode_1 || '';
-          clasePropiedad = info.class || '';
+          clasePropiedad = info['class'] || '';
           return true;
         }
         return false;
@@ -970,7 +974,7 @@ export default function PTRSSystem() {
             townshipNombre = info.township_name || '';
             ciudad = info.prop_address_city_name || '';
             zip = info.prop_address_zipcode_1 || '';
-            clasePropiedad = info.class || '';
+            clasePropiedad = info['class'] || '';
             encontrado = true;
           }
         }
