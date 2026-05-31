@@ -848,6 +848,7 @@ export default function PTRSSystem() {
           townshipNombre = info.township_name || '';
           ciudad = info.prop_address_city_name || '';
           zip = info.prop_address_zipcode_1 || '';
+          clasePropiedad = info.class || '';
           return true;
         }
         return false;
@@ -962,8 +963,8 @@ export default function PTRSSystem() {
             townshipNombre = info.township_name || '';
             ciudad = info.prop_address_city_name || '';
             zip = info.prop_address_zipcode_1 || '';
+            clasePropiedad = info.class || '';
             encontrado = true;
-            console.log('Encontrado:', { direccion, townshipNombre, ciudad, zip });
           }
         }
       } catch (e) {
