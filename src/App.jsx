@@ -1039,8 +1039,9 @@ export default function PTRSSystem() {
     setSaving(false);
   };
 
-  const mergeClientes = async (clienteOrigen, clienteDestino) => {
-    setSaving(true);
+  const mergeClientes = async (clienteOrigen, clienteDestino, options = {}) => {
+    const silent = options.silent || false;
+    if (!silent) setSaving(true);
     try {
       var nombreCompleto = (clienteOrigen.nombre || '') + ' ' + (clienteOrigen.apellido || '');
       nombreCompleto = nombreCompleto.trim();
@@ -1174,15 +1175,18 @@ export default function PTRSSystem() {
       // Delete the origen client
       await api(`clientes?id=eq.${clienteOrigen.id}`, { method: 'DELETE', token });
       
-      notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
-      setModalActivo(null);
-      setClienteParaMerge(null);
-      loadClientes(busqueda, paginaActual);
-      loadStats();
+      if (!silent) {
+        notify('Clientes fusionados correctamente (' + facturasOrigen.length + ' facturas actualizadas)');
+        setModalActivo(null);
+        setClienteParaMerge(null);
+        loadClientes(busqueda, paginaActual);
+        loadStats();
+      }
     } catch (e) {
-      notify('Error al fusionar clientes', 'error');
+      if (!silent) notify('Error al fusionar clientes', 'error');
+      else throw e; // En modo batch, propagar el error
     }
-    setSaving(false);
+    if (!silent) setSaving(false);
   };
 
   const deleteCliente = async (cliente) => {
@@ -4934,7 +4938,7 @@ export default function PTRSSystem() {
               telefono_principal: origen.telefono_principal, email: origen.email };
             const destinoObj = { id: destino.cliente_id, nombre: destino.nombre, apellido: destino.apellido,
               numero_cliente: destino.numero_cliente };
-            await mergeClientes(origenObj, destinoObj);
+            await mergeClientes(origenObj, destinoObj, { silent: true });
             exitosos++;
           } catch (e) {
             errores++;
@@ -4952,6 +4956,7 @@ export default function PTRSSystem() {
       setMergeEnProgreso(false);
       setResultadoFinal({ exitosos, errores });
       setGruposSeleccionados(new Set());
+      loadStats();
       cargarDuplicados(modoDup);
     };
 
