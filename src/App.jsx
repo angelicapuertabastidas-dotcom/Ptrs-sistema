@@ -101,6 +101,7 @@ export default function PTRSSystem() {
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [ordenClientes, setOrdenClientes] = useState('nombre.asc');
+  const [filtroEstado, setFiltroEstado] = useState('activo');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [toast, setToast] = useState(null);
   const [modalActivo, setModalActivo] = useState(null);
@@ -256,7 +257,8 @@ export default function PTRSSystem() {
         }
       } else {
         // No search - paginated list
-        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientes + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        var estadoFilter = filtroEstado !== 'todos' ? `&estado=eq.${filtroEstado}` : '';
+        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientes + estadoFilter + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
         var res = await api(url, { token: token });
         
         // Get total count from header
@@ -275,7 +277,7 @@ export default function PTRSSystem() {
       setClientes([]);
     }
     setLoading(false);
-  }, [token, ordenClientes]);
+  }, [token, ordenClientes, filtroEstado]);
 
   const loadTownships = useCallback(async () => {
     try {
@@ -1597,7 +1599,7 @@ export default function PTRSSystem() {
             autoFocus
           />
         </div>
-        <div className="flex items-center space-x-4 mt-4">
+        <div className="flex items-center space-x-4 mt-4 flex-wrap gap-2">
           <button 
             onClick={() => { setClienteSeleccionado(null); setModalActivo('nuevoCliente'); }} 
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center space-x-2"
@@ -1612,6 +1614,18 @@ export default function PTRSSystem() {
             <Icon name="merge" />
             <span>Fusionar Clientes</span>
           </button>
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-sm text-gray-500">Estado:</span>
+            <div className="flex border rounded-lg overflow-hidden text-sm">
+              {[['todos','Todos'],['activo','✅ Activos'],['inactivo','🚫 Inactivos']].map(([val, label]) => (
+                <button key={val}
+                  onClick={() => { setFiltroEstado(val); setPaginaActual(0); }}
+                  className={`px-3 py-1.5 ${filtroEstado === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
       
@@ -1771,6 +1785,36 @@ export default function PTRSSystem() {
               <button onClick={() => setModalActivo('mergeClientes')} className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 flex items-center space-x-1">
                 <Icon name="merge" />
                 <span>Fusionar</span>
+              </button>
+              <button
+                onClick={async () => {
+                  const esActivo = (cliente.estado || 'activo') === 'activo';
+                  const nuevoEstado = esActivo ? 'inactivo' : 'activo';
+                  const motivo = window.prompt(
+                    esActivo
+                      ? '¿Por qué se inactiva este cliente? (escribe el motivo):'
+                      : '¿Por qué se reactiva este cliente? (opcional):'
+                  );
+                  if (motivo === null) return; // canceló
+                  setSaving(true);
+                  try {
+                    await api(`clientes?id=eq.${cliente.id}`, { method: 'PATCH', body: { estado: nuevoEstado }, token, headers: { 'Prefer': 'return=representation' } });
+                    if (motivo.trim()) {
+                      await api('notas', { method: 'POST', body: {
+                        cliente_id: cliente.id,
+                        contenido: `${esActivo ? '🚫 INACTIVADO' : '✅ REACTIVADO'}: ${motivo.trim()}`,
+                        tipo: 'sistema'
+                      }, token });
+                    }
+                    setClienteSeleccionado({...clienteSeleccionado, estado: nuevoEstado});
+                    notify(esActivo ? '🚫 Cliente inactivado' : '✅ Cliente reactivado');
+                  } catch(e) {
+                    notify('Error al cambiar estado', 'error');
+                  }
+                  setSaving(false);
+                }}
+                className={`px-3 py-2 border rounded-lg text-sm flex items-center space-x-1 ${(cliente.estado || 'activo') === 'activo' ? 'hover:bg-red-50 text-red-600 border-red-200' : 'hover:bg-green-50 text-green-600 border-green-200'}`}>
+                <span>{(cliente.estado || 'activo') === 'activo' ? '🚫 Inactivar' : '✅ Reactivar'}</span>
               </button>
               <button onClick={() => setModalActivo('nuevoCliente')} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center space-x-1">
                 <Icon name="edit" />
