@@ -542,14 +542,37 @@ export default function PTRSSystem() {
         return;
       }
 
-      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)`, { token });
+      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)&activa=eq.true`, { token });
       const propiedades = await res.json();
       if (!Array.isArray(propiedades)) return;
-      
+
       const anioActual = new Date().getFullYear();
-      
-      // Sin facturas en el join, verificar via factura_propiedad
-      const pendientes = propiedades;
+
+      // Obtener IDs de propiedades que ya tienen factura del año actual
+      const propIds = propiedades.map(p => p.id).join(',');
+      let propiedadesConFactura = new Set();
+      if (propIds) {
+        const resFacturas = await api(
+          `factura_propiedad?propiedad_id=in.(${propIds})&select=propiedad_id,factura:facturas(anio_fiscal,fecha_factura,estado)`,
+          { token }
+        );
+        const fpData = await resFacturas.json();
+        if (Array.isArray(fpData)) {
+          fpData.forEach(fp => {
+            const f = fp.factura;
+            if (!f || f.estado === 'cancelada') return;
+            // Verificar si tiene factura del año actual
+            const anioFiscal = f.anio_fiscal;
+            const anioFecha = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : null;
+            if (anioFiscal === anioActual || anioFecha === anioActual) {
+              propiedadesConFactura.add(fp.propiedad_id);
+            }
+          });
+        }
+      }
+
+      // Solo mostrar propiedades SIN factura del año actual
+      const pendientes = propiedades.filter(p => !propiedadesConFactura.has(p.id));
 
       const agrupadosPorTownship = {};
       pendientes.forEach(p => {
