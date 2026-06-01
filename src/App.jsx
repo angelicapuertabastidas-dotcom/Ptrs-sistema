@@ -102,6 +102,12 @@ export default function PTRSSystem() {
   const [busqueda, setBusqueda] = useState('');
   const [ordenClientes, setOrdenClientes] = useState('nombre.asc');
   const [filtroEstado, setFiltroEstado] = useState('activo');
+  const ordenClientesRef = React.useRef('nombre.asc');
+  const filtroEstadoRef = React.useRef('activo');
+
+  // Mantener refs sincronizados con state
+  useEffect(() => { ordenClientesRef.current = ordenClientes; }, [ordenClientes]);
+  useEffect(() => { filtroEstadoRef.current = filtroEstado; }, [filtroEstado]);
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [toast, setToast] = useState(null);
   const [modalActivo, setModalActivo] = useState(null);
@@ -260,8 +266,8 @@ export default function PTRSSystem() {
         }
       } else {
         // No search - paginated list
-        var estadoFilter = filtroEstado !== 'todos' ? `&estado=eq.${filtroEstado}` : '';
-        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientes + estadoFilter + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
+        var estadoFilter = filtroEstadoRef.current !== 'todos' ? `&estado=eq.${filtroEstadoRef.current}` : '';
+        var url = 'clientes?select=*,propiedades(*)&order=' + ordenClientesRef.current + estadoFilter + '&limit=' + ITEMS_POR_PAGINA + '&offset=' + offset;
         var res = await api(url, { token: token });
         
         // Get total count from header
@@ -280,7 +286,7 @@ export default function PTRSSystem() {
       setClientes([]);
     }
     setLoading(false);
-  }, [token, ordenClientes, filtroEstado]);
+  }, [token]);
 
   const loadTownships = useCallback(async () => {
     try {
@@ -1662,7 +1668,12 @@ export default function PTRSSystem() {
             <div className="flex border rounded-lg overflow-hidden text-sm">
               {[['todos','Todos'],['activo','✅ Activos'],['inactivo','🚫 Inactivos']].map(([val, label]) => (
                 <button key={val}
-                  onClick={() => { setFiltroEstado(val); setPaginaActual(0); }}
+                  onClick={() => { 
+                    filtroEstadoRef.current = val;
+                    setFiltroEstado(val); 
+                    setPaginaActual(0);
+                    loadClientes('', 0);
+                  }}
                   className={`px-3 py-1.5 ${filtroEstado === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
                   {label}
                 </button>
@@ -1688,7 +1699,12 @@ export default function PTRSSystem() {
             <span className="text-xs text-gray-500">Ordenar:</span>
             <select
               value={ordenClientes}
-              onChange={(e) => { setOrdenClientes(e.target.value); setPaginaActual(0); }}
+              onChange={(e) => { 
+                ordenClientesRef.current = e.target.value;
+                setOrdenClientes(e.target.value); 
+                setPaginaActual(0);
+                loadClientes(busqueda, 0);
+              }}
               className="text-sm border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500"
             >
               <option value="nombre.asc">A → Z</option>
