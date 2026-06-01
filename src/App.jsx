@@ -387,24 +387,31 @@ export default function PTRSSystem() {
             return;
           }
 
-          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)&limit=5000`, { token });
+          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)&limit=5000&activa=eq.true`, { token });
           const propiedades = await res.json();
           if (!Array.isArray(propiedades)) {
             console.error('Error loading pendientes: propiedades no es array', propiedades);
             return;
           }
-          console.log('Propiedades en townships abiertos:', propiedades.length);
-          
+
           const anioActual = new Date().getFullYear();
-          
-          const pendientes = propiedades.filter(p => {
-            if (!p.facturas || p.facturas.length === 0) return true;
-            const tieneFacturaAnioActual = p.facturas.some(f => {
-              const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
-              return anioFactura === anioActual;
+
+          // Obtener propiedades con factura del año actual
+          const resFacturas = await api(
+            `facturas?anio_fiscal=eq.${anioActual}&estado=neq.cancelada&select=id,factura_propiedad(propiedad_id)`,
+            { token }
+          );
+          const facturasData = await resFacturas.json();
+          const propiedadesConFactura = new Set();
+          if (Array.isArray(facturasData)) {
+            facturasData.forEach(f => {
+              (f.factura_propiedad || []).forEach(fp => {
+                propiedadesConFactura.add(fp.propiedad_id);
+              });
             });
-            return !tieneFacturaAnioActual;
-          });
+          }
+
+          const pendientes = propiedades.filter(p => !propiedadesConFactura.has(p.id));
 
           const agrupadosPorTownship = {};
           pendientes.forEach(p => {
