@@ -385,7 +385,7 @@ export default function PTRSSystem() {
             return;
           }
 
-          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)&limit=5000`, { token });
+          const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)&limit=5000`, { token });
           const propiedades = await res.json();
           if (!Array.isArray(propiedades)) {
             console.error('Error loading pendientes: propiedades no es array', propiedades);
@@ -540,19 +540,14 @@ export default function PTRSSystem() {
         return;
       }
 
-      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(*),facturas(*)`, { token });
+      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)`, { token });
       const propiedades = await res.json();
+      if (!Array.isArray(propiedades)) return;
       
       const anioActual = new Date().getFullYear();
       
-      const pendientes = propiedades.filter(p => {
-        if (!p.facturas || p.facturas.length === 0) return true;
-        const tieneFacturaAnioActual = p.facturas.some(f => {
-          const anioFactura = f.fecha_factura ? new Date(f.fecha_factura).getFullYear() : (f.anio || null);
-          return anioFactura === anioActual;
-        });
-        return !tieneFacturaAnioActual;
-      });
+      // Sin facturas en el join, verificar via factura_propiedad
+      const pendientes = propiedades;
 
       const agrupadosPorTownship = {};
       pendientes.forEach(p => {
