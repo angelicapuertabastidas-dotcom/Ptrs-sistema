@@ -243,13 +243,16 @@ export default function PTRSSystem() {
           token: token
         });
         var searchResults = await res.json();
+        console.log('RPC results:', searchResults?.length, searchResults?.[0]);
         
         // Now get full client data with properties for each result
         if (searchResults && searchResults.length > 0) {
           var ids = searchResults.map(c => c.id);
           var idsParam = 'in.(' + ids.join(',') + ')';
           var fullRes = await api('clientes?select=*,propiedades(*)&id=' + idsParam + '&order=nombre.asc', { token: token });
+          console.log('Full query status:', fullRes.status);
           data = await fullRes.json();
+          console.log('Full data:', data?.length, data?.[0] || data);
           setTotalClientes(data.length);
         } else {
           data = [];
