@@ -576,7 +576,20 @@ export default function PTRSSystem() {
     }
   }, [vistaActual, townships]);
 
-  // CRUD Operations
+  // ── Historial del navegador (botón atrás) ──────────────────────────────
+  useEffect(() => {
+    if (!token) return;
+    window.history.pushState({ vista: vistaActual }, '', '#' + vistaActual);
+  }, [vistaActual]);
+
+  useEffect(() => {
+    const handlePop = (e) => {
+      if (e.state?.vista) setVistaActual(e.state.vista);
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────
   const saveCliente = async (data) => {
     setSaving(true);
     try {
