@@ -5161,6 +5161,210 @@ export default function PTRSSystem() {
 
 
 
+  // ========== REPORTE CLIENTES PENDIENTES POR TRIENIO ==========
+  const ReportePendientesTrienio = () => {
+    const [pendientesData, setPendientesData] = useState([]);
+    const [loadingReporte, setLoadingReporte] = useState(true);
+    const [errorReporte, setErrorReporte] = useState(null);
+    const [vistaReporte, setVistaReporte] = useState('detalle');
+    const [filtrosReporte, setFiltrosReporte] = useState({ ciclo: 'todos', region: 'todas', township: 'todos' });
+
+    useEffect(() => { cargarDatosReporte(); }, []);
+
+    const cargarDatosReporte = async () => {
+      setLoadingReporte(true);
+      setErrorReporte(null);
+      try {
+        const rpcFetch = (nombre) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${nombre}`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+            'Content-Type': 'application/json',
+            'Range-Unit': 'items',
+            'Range': '0-29999',
+            'Prefer': 'count=exact'
+          },
+          body: JSON.stringify({})
+        }).then(r => r.json());
+
+        const pendientesResult = await rpcFetch('get_clientes_pendientes_aplicar');
+        setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
+      } catch (err) {
+        console.error('Error cargando pendientes:', err);
+        setErrorReporte(err.message);
+      } finally {
+        setLoadingReporte(false);
+      }
+    };
+
+    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
+    const REGIONES_COOK_COUNTY = [
+      { value: 'south_west', label: 'South-West' },
+      { value: 'chicago', label: 'Chicago' },
+      { value: 'north', label: 'North' },
+    ];
+    const todosLosTownships = [...townships].sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const datosFiltrados = pendientesData.filter(p => {
+      if (filtrosReporte.ciclo !== 'todos' && p.ciclo_revaluacion !== parseInt(filtrosReporte.ciclo)) return false;
+      if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
+      if (filtrosReporte.township !== 'todos' && p.township_nombre !== filtrosReporte.township) return false;
+      return true;
+    });
+
+    const exportarCSV = () => {
+      const headers = ['Cliente','Apellido','Email','Teléfono','PIN','Dirección','Township','Región','Ciclo','Años Trienio','Años Facturados','Años Faltantes'];
+      const rows = datosFiltrados.map(p => [
+        p.cliente_nombre, p.cliente_apellido, p.cliente_email || '', p.cliente_telefono || '',
+        p.propiedad_pin, p.propiedad_direccion || '', p.township_nombre, p.township_region,
+        p.ciclo_revaluacion, p.anios_trienio, p.anios_facturados, p.anios_faltantes
+      ]);
+      const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'pendientes_trienio.csv'; a.click();
+    };
+
+    const getColorCiclo = (ciclo) => {
+      const colors = { 2023: 'bg-orange-100 text-orange-800', 2024: 'bg-blue-100 text-blue-800', 2025: 'bg-green-100 text-green-800', 2026: 'bg-purple-100 text-purple-800', 2027: 'bg-red-100 text-red-800', 2028: 'bg-yellow-100 text-yellow-800' };
+      return colors[ciclo] || 'bg-gray-100 text-gray-800';
+    };
+
+    const clientesUnicos = new Set(datosFiltrados.map(p => p.cliente_id)).size;
+    const propiedadesAfectadas = datosFiltrados.length;
+    const totalAniosFaltantes = datosFiltrados.reduce((sum, p) => sum + (p.cantidad_faltantes || 0), 0);
+    const townshipsAfectados = new Set(datosFiltrados.map(p => p.township_nombre)).size;
+
+    return (
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">📋 Clientes Pendientes por Aplicar</h1>
+            <p className="text-gray-600 mt-1">Clientes que no han aplicado para todos los años de su ciclo de revaluación</p>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Clientes con años faltantes', value: clientesUnicos.toLocaleString(), color: 'text-blue-600' },
+            { label: 'Propiedades afectadas', value: propiedadesAfectadas.toLocaleString(), color: 'text-orange-600' },
+            { label: 'Total años faltantes', value: totalAniosFaltantes.toLocaleString(), color: 'text-red-600' },
+            { label: 'Townships afectados', value: townshipsAfectados.toLocaleString(), color: 'text-green-600' },
+          ].map((s, i) => (
+            <div key={i} className="bg-white rounded-xl shadow-sm border p-4">
+              <div className={`text-3xl font-bold ${s.color}`}>{loadingReporte ? '...' : s.value}</div>
+              <div className="text-sm text-gray-500 mt-1">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Controles */}
+        <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-wrap items-center gap-3">
+          <div className="flex border rounded-lg overflow-hidden">
+            {['detalle'].map(v => (
+              <button key={v} onClick={() => setVistaReporte(v)}
+                className={'px-4 py-2 text-sm font-medium ' + (vistaReporte === v ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50')}>
+                📝 Detalle
+              </button>
+            ))}
+          </div>
+          <select value={filtrosReporte.ciclo} onChange={(e) => setFiltrosReporte({...filtrosReporte, ciclo: e.target.value})}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="todos">Todos los ciclos</option>
+            {CICLOS_COOK_COUNTY.map(c => <option key={c} value={c}>Ciclo {c}</option>)}
+          </select>
+          <select value={filtrosReporte.region} onChange={(e) => setFiltrosReporte({...filtrosReporte, region: e.target.value, township: 'todos'})}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="todas">Todas las regiones</option>
+            {REGIONES_COOK_COUNTY.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <select value={filtrosReporte.township} onChange={(e) => setFiltrosReporte({...filtrosReporte, township: e.target.value})}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="todos">Todos los townships</option>
+            {todosLosTownships.filter(t => filtrosReporte.region === 'todas' || t.region === filtrosReporte.region)
+              .map(t => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
+          </select>
+          <button onClick={exportarCSV} className="ml-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+            📥 Exportar CSV
+          </button>
+          <button onClick={cargarDatosReporte} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">
+            🔄 Actualizar
+          </button>
+        </div>
+
+        {loadingReporte ? (
+          <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+            <p className="text-gray-500">Cargando datos ({pendientesData.length.toLocaleString()} registros)...</p>
+          </div>
+        ) : errorReporte ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
+            Error: {errorReporte}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['Cliente','Propiedad','Township','Ciclo','Años Trienio','Facturados','Faltantes','Acción'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {datosFiltrados.slice(0, 500).map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900 text-sm">{item.cliente_nombre} {item.cliente_apellido}</div>
+                        <div className="text-xs text-gray-400">{item.cliente_telefono}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-mono text-xs text-blue-600">{item.propiedad_pin}</div>
+                        <div className="text-xs text-gray-500">{item.propiedad_direccion}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{item.township_nombre}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${getColorCiclo(item.ciclo_revaluacion)}`}>
+                          {item.ciclo_revaluacion}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{item.anios_trienio}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{item.anios_facturados || 'Sin facturas'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(item.anios_faltantes || '').split(',').map(a => a.trim()).filter(Boolean).map(a => (
+                            <span key={a} className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs">⚠️ {a}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => { setClienteSeleccionado({ id: item.cliente_id }); setVistaActual('expediente'); }}
+                          className="text-blue-600 hover:underline text-xs font-medium">Ver</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {datosFiltrados.length > 500 && (
+                <div className="p-4 text-center text-sm text-gray-500 bg-gray-50">
+                  Mostrando 500 de {datosFiltrados.length.toLocaleString()} — exporta el CSV para ver todos
+                </div>
+              )}
+              {datosFiltrados.length === 0 && (
+                <div className="p-12 text-center text-gray-500">
+                  ✅ No hay pendientes para los filtros seleccionados
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Render current view
   const renderView = () => {
     switch (vistaActual) {
