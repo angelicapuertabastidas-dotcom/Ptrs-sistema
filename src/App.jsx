@@ -1959,7 +1959,9 @@ export default function PTRSSystem() {
                           <div className="flex items-center space-x-2">
                             <p className={`font-mono text-lg font-semibold hover:underline ${esInactiva ? 'text-gray-500' : 'text-blue-600'}`}>{p.pin}</p>
                             {esInactiva && (
-                              <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700">🔄 Cambió de dueño</span>
+                              <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                                🚫 Inactiva
+                              </span>
                             )}
                           </div>
                         </div>
@@ -3973,6 +3975,46 @@ export default function PTRSSystem() {
                     className="bg-green-100 text-green-700 px-2 py-0.5 rounded hover:bg-green-200 disabled:opacity-50"
                   >
                     {buscandoDatosCondado ? '⏳ Buscando...' : '🔍 Buscar datos del condado'}
+                  </button>
+
+                  {/* Botón inactivar/activar propiedad */}
+                  <button
+                    onClick={async () => {
+                      const estaActiva = propiedadSeleccionada.activa !== false;
+                      const nuevoEstado = !estaActiva;
+                      const motivo = window.prompt(
+                        estaActiva
+                          ? '¿Por qué se inactiva esta propiedad? (ej: Clase 2-99 condo, vendida, etc.)'
+                          : '¿Por qué se reactiva esta propiedad?'
+                      );
+                      if (motivo === null) return;
+                      try {
+                        await api(`propiedades?id=eq.${propiedadSeleccionada.id}`, {
+                          method: 'PATCH',
+                          body: { activa: nuevoEstado },
+                          token,
+                          headers: { 'Prefer': 'return=representation' }
+                        });
+                        if (motivo.trim()) {
+                          await api('notas', { method: 'POST', body: {
+                            cliente_id: clienteSeleccionado.id,
+                            propiedad_id: propiedadSeleccionada.id,
+                            contenido: `${estaActiva ? '🚫 PROPIEDAD INACTIVADA' : '✅ PROPIEDAD REACTIVADA'} (PIN: ${propiedadSeleccionada.pin}): ${motivo.trim()}`,
+                            tipo: 'sistema'
+                          }, token });
+                        }
+                        setPropiedadSeleccionada({...propiedadSeleccionada, activa: nuevoEstado});
+                        notify(estaActiva ? '🚫 Propiedad inactivada' : '✅ Propiedad reactivada');
+                        // Recargar cliente
+                        const res = await api(`clientes?id=eq.${clienteSeleccionado.id}&select=*,propiedades(*)`, { token });
+                        const data = await res.json();
+                        if (data?.[0]) setClienteSeleccionado(data[0]);
+                      } catch(e) {
+                        notify('Error al cambiar estado de propiedad', 'error');
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded text-xs border ${propiedadSeleccionada.activa !== false ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
+                    {propiedadSeleccionada.activa !== false ? '🚫 Inactivar propiedad' : '✅ Reactivar propiedad'}
                   </button>
                 </div>
               </div>
