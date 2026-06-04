@@ -548,53 +548,50 @@ export default function PTRSSystem() {
     if (loadingPendientes) return;
     setLoadingPendientes(true);
     try {
-      const townshipsAbiertosIds = townships
-        .filter(t => calcularEstadoTownship(t).estado === 'abierto')
-        .map(t => t.id);
-      
-      if (townshipsAbiertosIds.length === 0) {
+      const anioActual = new Date().getFullYear();
+
+      // Usar RPC eficiente en lugar de múltiples queries
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_pendientes_aplicar`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + (token || SUPABASE_KEY),
+          'Content-Type': 'application/json',
+          'Prefer': 'count=exact',
+          'Range-Unit': 'items',
+          'Range': '0-9999'
+        },
+        body: JSON.stringify({ anio_actual: anioActual })
+      });
+
+      const pendientes = await res.json();
+      if (!Array.isArray(pendientes)) {
+        console.error('Error RPC pendientes:', pendientes);
         setPendientesAbiertos([]);
         setLoadingPendientes(false);
         return;
       }
 
-      const res = await api(`propiedades?township_id=in.(${townshipsAbiertosIds.join(',')})&select=*,cliente:clientes(id,nombre,apellido,telefono_principal,numero_cliente)&activa=eq.true`, { token });
-      const propiedades = await res.json();
-      if (!Array.isArray(propiedades)) return;
-
-      const anioActual = new Date().getFullYear();
-
-      // Obtener propiedades que YA tienen factura del año actual
-      // Query directa sin join anidado
-      const propIds = propiedades.map(p => p.id);
-      let propiedadesConFactura = new Set();
-
-      if (propIds.length > 0) {
-        const resFacturas = await api(
-          `facturas?anio_fiscal=eq.${anioActual}&estado=neq.cancelada&select=id,factura_propiedad(propiedad_id)`,
-          { token }
-        );
-        const facturasData = await resFacturas.json();
-        if (Array.isArray(facturasData)) {
-          facturasData.forEach(f => {
-            (f.factura_propiedad || []).forEach(fp => {
-              propiedadesConFactura.add(fp.propiedad_id);
-            });
-          });
-        }
-      }
-
-      // Solo mostrar propiedades SIN factura del año actual
-      const pendientes = propiedades.filter(p => !propiedadesConFactura.has(p.id));
-
+      // Agrupar por township
       const agrupadosPorTownship = {};
       pendientes.forEach(p => {
+        const twpNombre = p.township_nombre || 'Sin Township';
         const twp = townships.find(t => t.id === p.township_id);
-        const twpNombre = twp?.nombre || 'Sin Township';
         if (!agrupadosPorTownship[twpNombre]) {
           agrupadosPorTownship[twpNombre] = { township: twp, propiedades: [] };
         }
-        agrupadosPorTownship[twpNombre].propiedades.push(p);
+        // Adaptar formato para compatibilidad con el UI existente
+        agrupadosPorTownship[twpNombre].propiedades.push({
+          ...p,
+          id: p.propiedad_id,
+          cliente: {
+            id: p.cliente_id,
+            nombre: p.cliente_nombre,
+            apellido: p.cliente_apellido,
+            telefono_principal: p.cliente_telefono,
+            numero_cliente: p.cliente_numero
+          }
+        });
       });
 
       setPendientesAbiertos(Object.values(agrupadosPorTownship));
