@@ -2486,50 +2486,74 @@ export default function PTRSSystem() {
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
                 <p className="text-gray-500">Cargando...</p>
               </div>
-            ) : pendientesAbiertos.length > 0 ? (
-              pendientesAbiertos.map((grupo, idx) => {
+            ) : pendientesAbiertos.length > 0 ? (() => {
+              const [twpsExpandidos, setTwpsExpandidos] = React.useState(() => {
+                const init = {};
+                pendientesAbiertos.forEach((_, i) => { init[i] = true; });
+                return init;
+              });
+              return pendientesAbiertos.map((grupo, idx) => {
                 const estadoTwp = calcularEstadoTownship(grupo.township);
+                const expandido = twpsExpandidos[idx] !== false;
+                const diasRestantes = estadoTwp.diasRestantes;
+                const colorUrgencia = diasRestantes <= 7 ? 'bg-red-50 border-red-300 text-red-800' :
+                  diasRestantes <= 14 ? 'bg-orange-50 border-orange-300 text-orange-800' :
+                  'bg-green-50 border-green-200 text-green-800';
                 return (
                   <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                    <div className="p-4 bg-green-50 border-b border-green-200 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold text-green-800">{grupo.township?.nombre}</h3>
-                        <p className="text-sm text-green-600">
-                          Board of Review cierra {estadoTwp.fechaCierre?.toLocaleDateString('es-MX')} ({estadoTwp.diasRestantes} días)
-                        </p>
+                    {/* Header clicable */}
+                    <div
+                      className={`p-4 border-b flex items-center justify-between cursor-pointer hover:opacity-90 ${colorUrgencia}`}
+                      onClick={() => setTwpsExpandidos(prev => ({...prev, [idx]: !expandido}))}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{expandido ? '▼' : '▶'}</span>
+                        <div>
+                          <h3 className="font-bold text-lg">{grupo.township?.nombre}</h3>
+                          <p className="text-sm opacity-80">
+                            Assessor cierra {new Date(grupo.township?.fecha_fin_assessor).toLocaleDateString('es-MX')} 
+                            {diasRestantes > 0 ? ` · ${diasRestantes} días restantes` : ' · ¡HOY es el último día!'}
+                          </p>
+                        </div>
                       </div>
-                      <span className="bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium">
-                        {grupo.propiedades.length} pendientes
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="bg-white bg-opacity-70 px-3 py-1 rounded-full text-sm font-bold">
+                          {grupo.propiedades.length} pendientes
+                        </span>
+                      </div>
                     </div>
-                    <div className="divide-y max-h-[300px] overflow-y-auto">
-                      {grupo.propiedades.map((p, pIdx) => (
-                        <div 
-                          key={pIdx} 
-                          className="p-4 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => {
-                            if (p.cliente) {
-                              const clienteConProps = {...p.cliente, propiedades: [p]};
-                              setClienteSeleccionado(clienteConProps);
-                              setVistaActual('expediente');
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
+
+                    {/* Lista colapsable */}
+                    {expandido && (
+                      <div className="divide-y max-h-[400px] overflow-y-auto">
+                        {grupo.propiedades.map((p, pIdx) => (
+                          <div
+                            key={pIdx}
+                            className="p-4 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
+                            onClick={async () => {
+                              const res = await api(`clientes?id=eq.${p.cliente_id || p.cliente?.id}&select=*,propiedades(*)`, { token });
+                              const data = await res.json();
+                              if (data?.[0]) { setClienteSeleccionado(data[0]); setVistaActual('expediente'); }
+                            }}
+                          >
                             <div>
-                              <p className="font-mono text-blue-600 font-semibold">{p.pin}</p>
-                              <p className="text-sm text-gray-600">{p.direccion || 'Sin dirección'}</p>
-                              <p className="text-sm text-gray-500">{p.cliente?.nombre} {p.cliente?.apellido}</p>
+                              <p className="font-mono text-blue-600 font-semibold text-sm">{p.pin}</p>
+                              <p className="text-sm text-gray-700">{p.direccion || 'Sin dirección'}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {p.cliente_nombre || p.cliente?.nombre} {p.cliente_apellido || p.cliente?.apellido}
+                                {(p.cliente_telefono || p.cliente?.telefono_principal) && 
+                                  ` · ${p.cliente_telefono || p.cliente?.telefono_principal}`}
+                              </p>
                             </div>
                             <Icon name="chevron" />
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
-              })
-            ) : (
+              });
+            })()
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Icon name="check" />
