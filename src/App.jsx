@@ -5270,8 +5270,11 @@ export default function PTRSSystem() {
                           <div className="flex items-center gap-3 text-gray-500">
                             <span>🏠 {c.total_propiedades || 0}</span>
                             <span>📄 {c.total_facturas || 0}</span>
-                            <button onClick={() => { setClienteSeleccionado({ id: c.cliente_id }); setVistaActual('expediente'); }}
-                              className="text-blue-600 hover:underline text-xs">Ver</button>
+                            <button onClick={async () => {
+                              const res = await api(`clientes?id=eq.${c.cliente_id}&select=*,propiedades(*)`, { token });
+                              const data = await res.json();
+                              if (data?.[0]) { setClienteSeleccionado(data[0]); setVistaActual('expediente'); }
+                            }} className="text-blue-600 hover:underline text-xs">Ver</button>
                           </div>
                         </div>
                       ))}
@@ -5478,8 +5481,11 @@ export default function PTRSSystem() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button onClick={() => { setClienteSeleccionado({ id: item.cliente_id }); setVistaActual('expediente'); }}
-                          className="text-blue-600 hover:underline text-xs font-medium">Ver</button>
+                        <button onClick={async () => {
+                              const res = await api(`clientes?id=eq.${item.cliente_id}&select=*,propiedades(*)`, { token });
+                              const data = await res.json();
+                              if (data?.[0]) { setClienteSeleccionado(data[0]); setVistaActual('expediente'); }
+                            }} className="text-blue-600 hover:underline text-xs font-medium">Ver</button>
                       </td>
                     </tr>
                   ))}
