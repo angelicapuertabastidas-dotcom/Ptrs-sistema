@@ -2447,6 +2447,7 @@ export default function PTRSSystem() {
   const Pendientes = () => {
     const clientesSinPropiedades = clientes.filter(c => !c.propiedades || c.propiedades.length === 0);
     const totalPendientesTwp = pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0);
+    const [twpsExpandidos, setTwpsExpandidos] = useState({});
     
     return (
       <div className="space-y-6">
@@ -2486,15 +2487,10 @@ export default function PTRSSystem() {
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
                 <p className="text-gray-500">Cargando...</p>
               </div>
-            ) : pendientesAbiertos.length > 0 ? (() => {
-              const [twpsExpandidos, setTwpsExpandidos] = React.useState(() => {
-                const init = {};
-                pendientesAbiertos.forEach((_, i) => { init[i] = true; });
-                return init;
-              });
-              return pendientesAbiertos.map((grupo, idx) => {
+            ) : pendientesAbiertos.length > 0 ? (
+              pendientesAbiertos.map((grupo, idx) => {
                 const estadoTwp = calcularEstadoTownship(grupo.township);
-                const expandido = twpsExpandidos[idx] !== false;
+                const expandido = twpsExpandidos[idx] !== false; // default: expandido
                 const diasRestantes = estadoTwp.diasRestantes;
                 const colorUrgencia = diasRestantes <= 7 ? 'bg-red-50 border-red-300 text-red-800' :
                   diasRestantes <= 14 ? 'bg-orange-50 border-orange-300 text-orange-800' :
@@ -2552,8 +2548,8 @@ export default function PTRSSystem() {
                     )}
                   </div>
                 );
-              });
-            })()
+              })
+            ) : (
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Icon name="check" />
