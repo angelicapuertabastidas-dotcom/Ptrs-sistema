@@ -2447,7 +2447,7 @@ export default function PTRSSystem() {
   const Pendientes = () => {
     const clientesSinPropiedades = clientes.filter(c => !c.propiedades || c.propiedades.length === 0);
     const totalPendientesTwp = pendientesAbiertos.reduce((acc, g) => acc + g.propiedades.length, 0);
-    const [twpsExpandidos, setTwpsExpandidos] = useState({});
+    const [twpSeleccionado, setTwpSeleccionado] = useState(null);
     
     return (
       <div className="space-y-6">
@@ -2473,94 +2473,98 @@ export default function PTRSSystem() {
         {pendientesTab === 'townships' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-gray-500">Propiedades en townships abiertos que no tienen factura de {new Date().getFullYear()}.</p>
-              <button 
-                onClick={() => cargarPendientesTownshipsAbiertos()}
-                disabled={loadingPendientes}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
-              >
+              {twpSeleccionado ? (
+                <button onClick={() => setTwpSeleccionado(null)} className="flex items-center gap-2 text-blue-600 hover:underline text-sm font-medium">
+                  ← Volver a todos los townships
+                </button>
+              ) : (
+                <p className="text-gray-500">Selecciona un township para ver sus propiedades pendientes.</p>
+              )}
+              <button onClick={() => cargarPendientesTownshipsAbiertos()} disabled={loadingPendientes}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
                 {loadingPendientes ? 'Cargando...' : '🔄 Actualizar'}
               </button>
             </div>
-            
+
             {loadingPendientes ? (
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-                <p className="text-gray-500">Cargando...</p>
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-gray-500">Cargando pendientes...</p>
               </div>
-            ) : pendientesAbiertos.length > 0 ? (
-              pendientesAbiertos.map((grupo, idx) => {
-                const estadoTwp = calcularEstadoTownship(grupo.township);
-                const expandido = twpsExpandidos[idx] !== false; // default: expandido
-                const diasRestantes = estadoTwp.diasRestantes;
-                const colorUrgencia = diasRestantes <= 7 ? 'bg-red-50 border-red-300 text-red-800' :
-                  diasRestantes <= 14 ? 'bg-orange-50 border-orange-300 text-orange-800' :
-                  'bg-green-50 border-green-200 text-green-800';
-                return (
-                  <div key={idx} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                    {/* Header clicable */}
-                    <div
-                      className={`p-4 border-b flex items-center justify-between cursor-pointer hover:opacity-90 ${colorUrgencia}`}
-                      onClick={() => setTwpsExpandidos(prev => ({...prev, [idx]: !expandido}))}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">{expandido ? '▼' : '▶'}</span>
-                        <div>
-                          <h3 className="font-bold text-lg">{grupo.township?.nombre}</h3>
-                          <p className="text-sm opacity-80">
-                            Assessor cierra {new Date(grupo.township?.fecha_fin_assessor).toLocaleDateString('es-MX')} 
-                            {diasRestantes > 0 ? ` · ${diasRestantes} días restantes` : ' · ¡HOY es el último día!'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="bg-white bg-opacity-70 px-3 py-1 rounded-full text-sm font-bold">
-                          {grupo.propiedades.length} pendientes
-                        </span>
-                      </div>
-                    </div>
 
-                    {/* Lista colapsable */}
-                    {expandido && (
-                      <div className="divide-y max-h-[400px] overflow-y-auto">
-                        {grupo.propiedades.map((p, pIdx) => (
-                          <div
-                            key={pIdx}
-                            className="p-4 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
-                            onClick={async () => {
-                              const res = await api(`clientes?id=eq.${p.cliente_id || p.cliente?.id}&select=*,propiedades(*)`, { token });
-                              const data = await res.json();
-                              if (data?.[0]) { setClienteSeleccionado(data[0]); setVistaActual('expediente'); }
-                            }}
-                          >
-                            <div>
-                              <p className="font-mono text-blue-600 font-semibold text-sm">{p.pin}</p>
-                              <p className="text-sm text-gray-700">{p.direccion || 'Sin dirección'}</p>
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {p.cliente_nombre || p.cliente?.nombre} {p.cliente_apellido || p.cliente?.apellido}
-                                {(p.cliente_telefono || p.cliente?.telefono_principal) && 
-                                  ` · ${p.cliente_telefono || p.cliente?.telefono_principal}`}
-                              </p>
-                            </div>
-                            <Icon name="chevron" />
-                          </div>
-                        ))}
+            ) : !twpSeleccionado ? (
+              /* Vista de tarjetas por township */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendientesAbiertos.map((grupo, idx) => {
+                  const twp = grupo.township;
+                  const fecha = twp?.fecha_fin_assessor ? new Date(twp.fecha_fin_assessor) : null;
+                  const hoy = new Date();
+                  const dias = fecha ? Math.ceil((fecha - hoy) / (1000*60*60*24)) : null;
+                  const color = dias !== null && dias <= 7 ? 'border-red-400 bg-red-50' :
+                    dias !== null && dias <= 14 ? 'border-orange-400 bg-orange-50' :
+                    'border-green-400 bg-green-50';
+                  const textColor = dias !== null && dias <= 7 ? 'text-red-700' :
+                    dias !== null && dias <= 14 ? 'text-orange-700' : 'text-green-700';
+                  return (
+                    <div key={idx} onClick={() => setTwpSeleccionado(grupo)}
+                      className={`rounded-xl border-2 p-5 cursor-pointer hover:shadow-md transition-shadow ${color}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <h3 className={`font-bold text-xl ${textColor}`}>{twp?.nombre}</h3>
+                        <span className={`text-3xl font-black ${textColor}`}>{grupo.propiedades.length}</span>
                       </div>
-                    )}
+                      <p className={`text-sm ${textColor} opacity-80`}>
+                        {fecha ? `Cierra ${fecha.toLocaleDateString('es-MX')}` : 'Sin fecha'}
+                      </p>
+                      {dias !== null && (
+                        <p className={`text-xs font-medium mt-1 ${textColor}`}>
+                          {dias === 0 ? '⚠️ ¡HOY es el último día!' : `${dias} días restantes`}
+                        </p>
+                      )}
+                      <p className={`text-xs mt-2 ${textColor} opacity-70`}>propiedades pendientes →</p>
+                    </div>
+                  );
+                })}
+                {pendientesAbiertos.length === 0 && (
+                  <div className="col-span-3 bg-white rounded-xl border p-8 text-center text-gray-500">
+                    ¡Todas las propiedades tienen factura de este año!
                   </div>
-                );
-              })
+                )}
+              </div>
+
             ) : (
-              <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Icon name="check" />
+              /* Vista detalle de un township */
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className={`p-4 border-b flex items-center justify-between ${
+                  (() => { const d = twpSeleccionado.township?.fecha_fin_assessor ? Math.ceil((new Date(twpSeleccionado.township.fecha_fin_assessor) - new Date()) / 86400000) : 99;
+                    return d <= 7 ? 'bg-red-50' : d <= 14 ? 'bg-orange-50' : 'bg-green-50'; })()}`}>
+                  <div>
+                    <h3 className="font-bold text-lg">{twpSeleccionado.township?.nombre}</h3>
+                    <p className="text-sm text-gray-600">
+                      {twpSeleccionado.propiedades.length} propiedades pendientes
+                    </p>
+                  </div>
                 </div>
-                <p className="text-gray-500">
-                  {townshipsConAlertas.length === 0 
-                    ? 'No hay townships abiertos actualmente' 
-                    : pendientesAbiertos.length === 0 && !loadingPendientes
-                      ? 'Haz clic en "Actualizar" para cargar las propiedades pendientes'
-                      : '¡Todas las propiedades en townships abiertos tienen factura de este año!'}
-                </p>
+                <div className="divide-y max-h-[600px] overflow-y-auto">
+                  {twpSeleccionado.propiedades.map((p, pIdx) => (
+                    <div key={pIdx} className="p-4 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
+                      onClick={async () => {
+                        const res = await api(`clientes?id=eq.${p.cliente_id || p.cliente?.id}&select=*,propiedades(*)`, { token });
+                        const data = await res.json();
+                        if (data?.[0]) { setClienteSeleccionado(data[0]); setVistaActual('expediente'); }
+                      }}>
+                      <div>
+                        <p className="font-mono text-blue-600 font-semibold text-sm">{p.pin}</p>
+                        <p className="text-sm text-gray-700">{p.direccion || 'Sin dirección'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {p.cliente_nombre || p.cliente?.nombre} {p.cliente_apellido || p.cliente?.apellido}
+                          {(p.cliente_telefono || p.cliente?.telefono_principal) &&
+                            ` · ${p.cliente_telefono || p.cliente?.telefono_principal}`}
+                        </p>
+                      </div>
+                      <Icon name="chevron" />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
