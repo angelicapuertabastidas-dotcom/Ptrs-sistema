@@ -1275,16 +1275,14 @@ export default function PTRSSystem() {
     const inicioBor = t.fecha_inicio_bor ? new Date(t.fecha_inicio_bor) : null;
     const finBor = t.fecha_fin_bor ? new Date(t.fecha_fin_bor) : null;
     
-    // Verificar si BOR está abierto
-    if (inicioBor && finBor && hoy >= inicioBor && hoy <= finBor) {
-      const diasRestantes = Math.ceil((finBor - hoy) / (1000 * 60 * 60 * 24));
-      return { estado: 'abierto', tipo: 'Board of Review', fechaCierre: finBor, diasRestantes };
-    }
-    
-    // Verificar si Assessor está abierto
-    if (inicioAssessor && finAssessor && hoy >= inicioAssessor && hoy <= finAssessor) {
-      const diasRestantes = Math.ceil((finAssessor - hoy) / (1000 * 60 * 60 * 24));
+    // Si el campo assessor_open está explícitamente definido, usarlo como fuente de verdad
+    if (t.assessor_open === true) {
+      const diasRestantes = finAssessor ? Math.ceil((finAssessor - hoy) / (1000 * 60 * 60 * 24)) : 0;
       return { estado: 'abierto', tipo: 'Assessor', fechaCierre: finAssessor, diasRestantes };
+    }
+    if (t.bor_open === true) {
+      const diasRestantes = finBor ? Math.ceil((finBor - hoy) / (1000 * 60 * 60 * 24)) : 0;
+      return { estado: 'abierto', tipo: 'Board of Review', fechaCierre: finBor, diasRestantes };
     }
     
     // Verificar si está próximo a abrir (14 días)
