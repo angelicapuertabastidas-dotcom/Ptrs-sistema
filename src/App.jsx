@@ -5378,7 +5378,7 @@ export default function PTRSSystem() {
     const [loadingReporte, setLoadingReporte] = useState(true);
     const [errorReporte, setErrorReporte] = useState(null);
     const [vistaReporte, setVistaReporte] = useState('detalle');
-    const [filtrosReporte, setFiltrosReporte] = useState({ ciclo: 'todos', region: 'todas', township: 'todos' });
+    const [filtrosReporte, setFiltrosReporte] = useState({ ciclo: 'todos', region: 'todas', township: 'todos', ultimoPago: 'todos' });
 
     useEffect(() => { cargarDatosReporte(); }, []);
 
@@ -5421,6 +5421,10 @@ export default function PTRSSystem() {
       if (filtrosReporte.ciclo !== 'todos' && p.ciclo_revaluacion !== parseInt(filtrosReporte.ciclo)) return false;
       if (filtrosReporte.region !== 'todas' && p.township_region !== filtrosReporte.region) return false;
       if (filtrosReporte.township !== 'todos' && p.township_nombre !== filtrosReporte.township) return false;
+      if (filtrosReporte.ultimoPago !== 'todos') {
+        if (filtrosReporte.ultimoPago === 'null' && p.ultimo_anio_pagado != null) return false;
+        if (filtrosReporte.ultimoPago !== 'null' && p.ultimo_anio_pagado !== parseInt(filtrosReporte.ultimoPago)) return false;
+      }
       return true;
     });
 
@@ -5497,6 +5501,19 @@ export default function PTRSSystem() {
             {todosLosTownships.filter(t => filtrosReporte.region === 'todas' || t.region === filtrosReporte.region)
               .map(t => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
           </select>
+          <select value={filtrosReporte.ultimoPago} onChange={(e) => setFiltrosReporte({...filtrosReporte, ultimoPago: e.target.value})}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="todos">Última apelación: todos</option>
+            <option value="2026">Pagaron en 2026</option>
+            <option value="2025">Pagaron en 2025</option>
+            <option value="2024">Pagaron en 2024</option>
+            <option value="2023">Pagaron en 2023</option>
+            <option value="2022">Pagaron en 2022</option>
+            <option value="2021">Pagaron en 2021</option>
+            <option value="2020">Pagaron en 2020</option>
+            <option value="2019">Pagaron en 2019</option>
+            <option value="null">Sin historial</option>
+          </select>
           <button onClick={exportarCSV} className="ml-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
             📥 Exportar CSV
           </button>
@@ -5520,7 +5537,7 @@ export default function PTRSSystem() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['Cliente','Propiedad','Township','Ciclo','Años Trienio','Facturados','Faltantes','Acción'].map(h => (
+                    {['Cliente','Propiedad','Township','Ciclo','Años Trienio','Facturados','Faltantes','Último Pago','Acción'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -5550,6 +5567,17 @@ export default function PTRSSystem() {
                             <span key={a} className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs">⚠️ {a}</span>
                           ))}
                         </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.ultimo_anio_pagado ? (
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            item.ultimo_anio_pagado >= 2025 ? 'bg-green-100 text-green-700' :
+                            item.ultimo_anio_pagado >= 2023 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>{item.ultimo_anio_pagado}</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">Sin historial</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <button onClick={async () => {
