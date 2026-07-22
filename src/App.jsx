@@ -2532,6 +2532,7 @@ export default function PTRSSystem() {
                   {loadingPendientes ? 'Cargando...' : '🔄 Actualizar'}
                 </button>
               </div>
+            </div>
 
             {loadingPendientes ? (
               <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
