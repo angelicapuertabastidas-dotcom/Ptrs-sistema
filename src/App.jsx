@@ -5400,7 +5400,12 @@ export default function PTRSSystem() {
         }).then(r => r.json());
 
         const pendientesResult = await rpcFetch('get_clientes_pendientes_aplicar');
-        setPendientesData(Array.isArray(pendientesResult) ? pendientesResult : []);
+        // Solo mostrar ciclos activos (2023, 2024, 2025) — ciclos futuros aún no aplican
+        const anioActual = new Date().getFullYear();
+        const filtrados = Array.isArray(pendientesResult) 
+          ? pendientesResult.filter(p => p.ciclo_revaluacion <= anioActual)
+          : [];
+        setPendientesData(filtrados);
       } catch (err) {
         console.error('Error cargando pendientes:', err);
         setErrorReporte(err.message);
@@ -5409,7 +5414,7 @@ export default function PTRSSystem() {
       }
     };
 
-    const CICLOS_COOK_COUNTY = [2023, 2024, 2025, 2026, 2027, 2028];
+    const CICLOS_COOK_COUNTY = [2023, 2024, 2025];
     const REGIONES_COOK_COUNTY = [
       { value: 'south_west', label: 'South-West' },
       { value: 'chicago', label: 'Chicago' },
